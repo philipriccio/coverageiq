@@ -97,6 +97,9 @@ class MoonshotClient:
             LLMRateLimitError: If rate limit is exceeded
             LLMContentModerationError: If content is rejected by moderation (for fallback)
         """
+        import time
+        start_time = time.time()
+        
         payload = {
             "model": model,
             "messages": messages,
@@ -108,13 +111,26 @@ class MoonshotClient:
         if response_format:
             payload["response_format"] = response_format
         
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
+        # Use explicit timeout configuration for all phases
+        timeout_config = httpx.Timeout(
+            connect=30.0,      # Time to establish connection
+            read=self.timeout, # Time to read response  
+            write=30.0,        # Time to send request
+            pool=30.0          # Time to get connection from pool
+        )
+        
+        print(f"[Moonshot] Sending request to {model}...")
+        
+        async with httpx.AsyncClient(timeout=timeout_config) as client:
             try:
                 response = await client.post(
                     f"{self.BASE_URL}/chat/completions",
                     headers=self.headers,
                     json=payload
                 )
+                
+                elapsed = time.time() - start_time
+                print(f"[Moonshot] Response received in {elapsed:.1f}s")
                 
                 if response.status_code == 429:
                     raise LLMRateLimitError("Rate limit exceeded. Please try again.")
@@ -135,8 +151,11 @@ class MoonshotClient:
                 
                 return response.json()
                 
-            except httpx.TimeoutException:
-                raise LLMError(f"Request timeout after {self.timeout}s")
+            except httpx.TimeoutException as e:
+                elapsed = time.time() - start_time
+                raise LLMError(f"Request timeout after {elapsed:.1f}s (timeout: {self.timeout}s): {str(e)}")
+            except httpx.ConnectError as e:
+                raise LLMError(f"Connection error: {str(e)}. Check network connectivity.")
             except httpx.HTTPError as e:
                 raise LLMError(f"HTTP error: {str(e)}")
     
@@ -404,6 +423,9 @@ class ClaudeClient:
             LLMError: If analysis fails
         """
         import anthropic
+        import time
+        
+        start_time = time.time()
         
         # Construct the full content (same format as Moonshot)
         full_content = f"""{prompt}
@@ -419,6 +441,8 @@ SCRIPT CONTENT:
 Provide your analysis based on the instructions above."""
         
         system_prompt = "You are an expert script coverage analyst with 20+ years of experience reading screenplays and TV pilots for major studios and production companies. You provide professional, objective, and constructive coverage."
+        
+        print(f"[Claude] Sending request to {model}...")
         
         try:
             # Add JSON instruction to system prompt if expecting JSON
@@ -437,6 +461,9 @@ Provide your analysis based on the instructions above."""
                     }
                 ]
             )
+            
+            elapsed = time.time() - start_time
+            print(f"[Claude] Response received in {elapsed:.1f}s")
             
             # Extract the generated content
             content = response.content[0].text
@@ -460,15 +487,23 @@ Provide your analysis based on the instructions above."""
             
             return {"content": content}
             
-        except anthropic.APIError as e:
+        except anthropic.APITimeoutError as e:
+            elapsed = time.time() - start_time
+            raise LLMError(f"Claude request timed out after {elapsed:.1f}s (timeout: {self.timeout}s). The script may be too long or the API is experiencing delays.")
+        except anthropic.APIStatusError as e:
+            elapsed = time.time() - start_time
             if e.status_code == 429:
                 raise LLMRateLimitError(f"Anthropic rate limit exceeded: {str(e)}")
             elif e.status_code == 401:
                 raise LLMError(f"Invalid Anthropic API key: {str(e)}")
             else:
-                raise LLMError(f"Anthropic API error: {str(e)}")
+                raise LLMError(f"Anthropic API error ({e.status_code}) after {elapsed:.1f}s: {str(e)}")
+        except anthropic.APIError as e:
+            elapsed = time.time() - start_time
+            raise LLMError(f"Anthropic API error (after {elapsed:.1f}s): {str(e)}")
         except Exception as e:
-            raise LLMError(f"Claude analysis failed: {str(e)}")
+            elapsed = time.time() - start_time
+            raise LLMError(f"Claude analysis failed after {elapsed:.1f}s: {str(e)}")
     
     async def analyze_with_chunking(
         self,
