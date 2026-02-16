@@ -427,7 +427,7 @@ Provide your analysis based on the instructions above."""
             
             response = await self._client.messages.create(
                 model=model,
-                max_tokens=DEFAULT_MAX_TOKENS,
+                max_tokens=self.DEFAULT_MAX_TOKENS,
                 temperature=temperature,
                 system=system_prompt,
                 messages=[
