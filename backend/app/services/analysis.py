@@ -3,7 +3,7 @@
 This module orchestrates the end-to-end coverage generation process:
 1. Retrieve script from database (metadata only - text is passed through)
 2. Prepare and chunk text if needed
-3. Send to LLM with appropriate prompts
+3. Send to LLM with appropriate prompts (Moonshot primary, Claude fallback)
 4. Parse and validate the response
 5. Save results to database
 6. Handle errors and retries
@@ -13,12 +13,19 @@ Privacy Note: Script text is held in memory only during analysis and never persi
 import json
 import uuid
 from datetime import datetime
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.models import CoverageReport, ScriptMetadata, ReportStatus, Recommendation
-from app.services.llm_client import get_moonshot_client, MoonshotClient, LLMError
+from app.services.llm_client import (
+    get_moonshot_client, 
+    get_claude_client,
+    MoonshotClient, 
+    ClaudeClient,
+    LLMError, 
+    LLMContentModerationError
+)
 from app.services.prompts import build_full_prompt, TV_PILOT_SYSTEM_CONTEXT
 
 
@@ -31,23 +38,37 @@ class AnalysisPipeline:
     """Pipeline for generating TV pilot coverage reports.
     
     This class handles the full analysis workflow from script text to
-    structured coverage report.
+    structured coverage report. Uses Moonshot as primary LLM with
+    Claude as fallback for content moderation rejections.
     """
     
-    def __init__(self, client: Optional[MoonshotClient] = None):
+    def __init__(
+        self, 
+        moonshot_client: Optional[MoonshotClient] = None,
+        claude_client: Optional[ClaudeClient] = None
+    ):
         """Initialize the pipeline.
         
         Args:
-            client: Optional MoonshotClient instance. If None, uses singleton.
+            moonshot_client: Optional MoonshotClient instance. If None, uses singleton.
+            claude_client: Optional ClaudeClient instance. If None, uses singleton.
         """
-        self._client = client
+        self._moonshot_client = moonshot_client
+        self._claude_client = claude_client
     
     @property
-    def client(self) -> MoonshotClient:
+    def moonshot_client(self) -> MoonshotClient:
         """Lazy-load the Moonshot client."""
-        if self._client is None:
-            self._client = get_moonshot_client()
-        return self._client
+        if self._moonshot_client is None:
+            self._moonshot_client = get_moonshot_client()
+        return self._moonshot_client
+    
+    @property
+    def claude_client(self) -> ClaudeClient:
+        """Lazy-load the Claude client."""
+        if self._claude_client is None:
+            self._claude_client = get_claude_client()
+        return self._claude_client
     
     async def analyze_script(
         self,
@@ -58,12 +79,12 @@ class AnalysisPipeline:
         comps: Optional[List[str]] = None,
         analysis_depth: str = "standard",
         db: Optional[AsyncSession] = None
-    ) -> Dict[str, Any]:
+    ) -> Tuple[Dict[str, Any], str]:
         """Run full coverage analysis on a script.
         
         This is the main entry point for analysis. It handles:
         - Progress updates via database
-        - LLM communication
+        - LLM communication (Moonshot primary, Claude fallback)
         - Response parsing and validation
         - Result storage
         
@@ -77,7 +98,7 @@ class AnalysisPipeline:
             db: Database session for updates
             
         Returns:
-            Complete analysis results dictionary
+            Tuple of (analysis results dictionary, model used string)
             
         Raises:
             AnalysisError: If analysis fails
@@ -108,37 +129,78 @@ Use these as reference points for market positioning and quality assessment.
             
             available_for_script = (CONTEXT_LIMIT - PROMPT_TOKENS - RESPONSE_TOKENS - SAFETY_MARGIN) * CHARS_PER_TOKEN
             
-            if len(script_text) > available_for_script:
-                print(f"Script length ({len(script_text)} chars) exceeds context window. Using chunking.")
-                # Use chunked analysis
-                raw_result = await self.client.analyze_with_chunking(
-                    script_text=script_text,
-                    prompt=prompt,
-                    model=MoonshotClient.MODEL_KIMI_K2_5
-                )
-            else:
-                print(f"Analyzing script ({len(script_text)} chars) in single pass...")
-                # Single-pass analysis
-                raw_result = await self.client.analyze_script(
-                    script_text=script_text,
-                    prompt=prompt,
-                    model=MoonshotClient.MODEL_KIMI_K2_5,
-                    expect_json=True
-                )
+            use_chunking = len(script_text) > available_for_script
+            
+            # Try Moonshot first, fallback to Claude on content moderation
+            model_used = None
+            raw_result = None
+            
+            try:
+                if use_chunking:
+                    print(f"Script length ({len(script_text)} chars) exceeds context window. Using chunking with Moonshot.")
+                    raw_result = await self.moonshot_client.analyze_with_chunking(
+                        script_text=script_text,
+                        prompt=prompt,
+                        model=MoonshotClient.MODEL_KIMI_K2_5
+                    )
+                else:
+                    print(f"Analyzing script ({len(script_text)} chars) with Moonshot...")
+                    raw_result = await self.moonshot_client.analyze_script(
+                        script_text=script_text,
+                        prompt=prompt,
+                        model=MoonshotClient.MODEL_KIMI_K2_5,
+                        expect_json=True
+                    )
+                model_used = "moonshot-v1-128k"
+                
+            except LLMContentModerationError as e:
+                # Moonshot rejected content - fallback to Claude
+                print(f"Moonshot rejected content (moderation): {str(e)}")
+                print("Falling back to Claude for analysis...")
+                
+                try:
+                    if use_chunking:
+                        raw_result = await self.claude_client.analyze_with_chunking(
+                            script_text=script_text,
+                            prompt=prompt,
+                            model=ClaudeClient.MODEL_CLAUDE_SONNET
+                        )
+                    else:
+                        raw_result = await self.claude_client.analyze_script(
+                            script_text=script_text,
+                            prompt=prompt,
+                            model=ClaudeClient.MODEL_CLAUDE_SONNET,
+                            expect_json=True
+                        )
+                    model_used = "claude-3-5-sonnet-20241022"
+                    print("Claude fallback analysis completed successfully")
+                    
+                except LLMError as claude_error:
+                    raise AnalysisError(f"Both Moonshot and Claude failed. Claude error: {str(claude_error)}")
+            
+            except LLMError as e:
+                # Other Moonshot errors - don't fallback, just raise
+                raise AnalysisError(f"Moonshot analysis failed: {str(e)}")
+            
+            if raw_result is None or model_used is None:
+                raise AnalysisError("Analysis returned no results")
             
             # Parse and validate the result
             parsed_result = self._parse_analysis_result(raw_result)
+            
+            # Add model_used to the result for tracking
+            parsed_result["_model_used"] = model_used
             
             # Calculate processing time
             end_time = datetime.utcnow()
             processing_time = (end_time - start_time).total_seconds()
             
-            print(f"Analysis completed in {processing_time:.1f}s")
+            print(f"Analysis completed in {processing_time:.1f}s using {model_used}")
             
-            return parsed_result
+            return parsed_result, model_used
             
-        except LLMError as e:
-            raise AnalysisError(f"LLM analysis failed: {str(e)}")
+        except AnalysisError:
+            raise
         except Exception as e:
             raise AnalysisError(f"Analysis pipeline failed: {str(e)}")
     
@@ -244,6 +306,7 @@ Use these as reference points for market positioning and quality assessment.
         self,
         report_id: str,
         results: Dict[str, Any],
+        model_used: str,
         db: AsyncSession
     ) -> CoverageReport:
         """Save analysis results to the database.
@@ -251,6 +314,7 @@ Use these as reference points for market positioning and quality assessment.
         Args:
             report_id: UUID of the report to update
             results: Parsed analysis results
+            model_used: Name of the LLM model used (for tracking)
             db: Database session
             
         Returns:
@@ -307,6 +371,9 @@ Use these as reference points for market positioning and quality assessment.
             
             # Evidence quotes
             report.evidence_quotes = results.get("evidence_quotes", [])
+            
+            # Track which model was used (for cost tracking and debugging)
+            report.model_used = model_used
             
             await db.commit()
             await db.refresh(report)
@@ -381,9 +448,9 @@ async def run_coverage_analysis(
     """Run complete coverage analysis and save results.
     
     This is a convenience wrapper that handles the full workflow:
-    1. Run analysis
+    1. Run analysis (Moonshot primary, Claude fallback)
     2. Parse results
-    3. Save to database
+    3. Save to database with model tracking
     4. Handle errors
     
     Args:
@@ -404,8 +471,8 @@ async def run_coverage_analysis(
     pipeline = get_analysis_pipeline()
     
     try:
-        # Run analysis
-        results = await pipeline.analyze_script(
+        # Run analysis (with automatic fallback to Claude if needed)
+        results, model_used = await pipeline.analyze_script(
             script_text=script_text,
             report_id=report_id,
             script_id=script_id,
@@ -415,8 +482,8 @@ async def run_coverage_analysis(
             db=db
         )
         
-        # Save results
-        report = await pipeline.save_analysis_results(report_id, results, db)
+        # Save results with model tracking
+        report = await pipeline.save_analysis_results(report_id, results, model_used, db)
         
         return report
         
