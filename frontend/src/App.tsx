@@ -234,21 +234,36 @@ function ReportViewer({
       {/* Character Notes */}
       {report.character_notes && (
         <CollapsibleSection title="Character Notes">
-          <pre className="json-content">{report.character_notes}</pre>
+          <div className="formatted-content">
+            {typeof report.character_notes === 'string' 
+              ? report.character_notes.split('\n').map((line, i) => <p key={i}>{line}</p>)
+              : <pre>{JSON.stringify(report.character_notes, null, 2)}</pre>
+            }
+          </div>
         </CollapsibleSection>
       )}
       
       {/* Structure Analysis */}
       {report.structure_analysis && (
         <CollapsibleSection title="Structure Analysis">
-          <pre className="json-content">{report.structure_analysis}</pre>
+          <div className="formatted-content">
+            {typeof report.structure_analysis === 'string'
+              ? report.structure_analysis.split('\n').map((line, i) => <p key={i}>{line}</p>)
+              : <pre>{JSON.stringify(report.structure_analysis, null, 2)}</pre>
+            }
+          </div>
         </CollapsibleSection>
       )}
       
       {/* Market Positioning */}
       {report.market_positioning && (
         <CollapsibleSection title="Market Positioning">
-          <pre className="json-content">{report.market_positioning}</pre>
+          <div className="formatted-content">
+            {typeof report.market_positioning === 'string'
+              ? report.market_positioning.split('\n').map((line, i) => <p key={i}>{line}</p>)
+              : <pre>{JSON.stringify(report.market_positioning, null, 2)}</pre>
+            }
+          </div>
         </CollapsibleSection>
       )}
       
