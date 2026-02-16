@@ -337,7 +337,7 @@ class ClaudeClient:
     Claude is used as a fallback when Moonshot rejects content due to
     content moderation (e.g., mature themes, HBO-style scripts).
     
-    Model: claude-3-5-sonnet-20240620
+    Model: claude-sonnet-4-5
     
     Privacy Note: Script content is sent to Anthropic API for analysis.
     Per Anthropic's terms, data is not retained or used for training
@@ -345,7 +345,7 @@ class ClaudeClient:
     """
     
     # Anthropic model
-    MODEL_CLAUDE_SONNET = "claude-3-5-sonnet-20240620"
+    MODEL_CLAUDE_SONNET = "claude-sonnet-4-5"
     DEFAULT_MODEL = MODEL_CLAUDE_SONNET
     
     DEFAULT_TEMPERATURE = 0.3  # Same as Moonshot for consistency
