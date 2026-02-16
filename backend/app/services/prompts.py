@@ -10,6 +10,8 @@ All prompts use structured JSON output for consistent parsing.
 # Base system context that applies to all TV pilot analysis
 TV_PILOT_SYSTEM_CONTEXT = """You are an expert TV development executive with 20+ years of experience at major networks and streaming platforms (HBO, Netflix, FX, AMC). You've read thousands of TV pilots and know what makes a series sustainable.
 
+IMPORTANT: Respond in English only. Do not use any other languages in your analysis.
+
 Your job is to provide professional script coverage that helps producers and writers understand:
 1. Does this pilot work as a standalone episode?
 2. Does it establish a SERIES ENGINE that can generate 5+ seasons of stories?
