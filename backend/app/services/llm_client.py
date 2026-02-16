@@ -34,7 +34,7 @@ class MoonshotClient:
     """
     
     # Moonshot API endpoints
-    BASE_URL = "https://api.moonshot.cn/v1"
+    BASE_URL = "https://api.moonshot.ai/v1"
     
     # Available models
     MODEL_KIMI_K2_5 = "moonshot-v1-128k"  # Kimi K2.5 with 128k context
