@@ -284,6 +284,7 @@ function ReportViewer({
 // Main App Component
 function App() {
   const [scriptContent, setScriptContent] = useState('')
+  const [scriptFile, setScriptFile] = useState<File | null>(null)
   const [scriptTitle, setScriptTitle] = useState('')
   const [genre, setGenre] = useState('drama')
   const [comps, setComps] = useState('')
@@ -301,19 +302,38 @@ function App() {
     setReport(null)
     
     try {
-      // Step 1: Upload script
-      const uploadRes = await axios.post(`${API_BASE}/api/scripts/upload`, {
-        title: scriptTitle || 'Untitled Script',
-        content: scriptContent,
-        content_type: 'tv_pilot'
-      })
+      let scriptId: string
+      let scriptText: string
       
-      const scriptId = uploadRes.data.script_id
+      if (scriptFile) {
+        // File upload path
+        const formData = new FormData()
+        formData.append('file', scriptFile)
+        formData.append('title', scriptTitle || scriptFile.name.replace(/\.[^/.]+$/, ''))
+        formData.append('content_type', 'tv_pilot')
+        
+        const uploadRes = await axios.post(`${API_BASE}/api/scripts/upload-file`, formData, {
+          headers: { 'Content-Type': 'multipart/form-data' }
+        })
+        
+        scriptId = uploadRes.data.script_id
+        scriptText = uploadRes.data.extracted_text || ''
+      } else {
+        // Text paste path
+        const uploadRes = await axios.post(`${API_BASE}/api/scripts/upload`, {
+          title: scriptTitle || 'Untitled Script',
+          content: scriptContent,
+          content_type: 'tv_pilot'
+        })
+        
+        scriptId = uploadRes.data.script_id
+        scriptText = scriptContent
+      }
       
       // Step 2: Request coverage generation (sync for now)
       const coverageRes = await axios.post(`${API_BASE}/api/coverage/generate-sync`, {
         script_id: scriptId,
-        script_text: scriptContent,
+        script_text: scriptText,
         genre: genre,
         comps: comps ? comps.split(',').map(c => c.trim()) : [],
         analysis_depth: analysisDepth
@@ -462,18 +482,42 @@ function App() {
             </div>
 
             <div className="form-group full-width">
-              <label htmlFor="script">Script Content</label>
+              <label htmlFor="scriptFile">Upload Script File (PDF or Final Draft)</label>
+              <input
+                id="scriptFile"
+                type="file"
+                accept=".pdf,.fdx"
+                onChange={(e) => {
+                  const file = e.target.files?.[0]
+                  if (file) {
+                    setScriptFile(file)
+                    setScriptContent('') // Clear text if file is selected
+                  }
+                }}
+              />
+              {scriptFile && (
+                <p className="file-selected">
+                  Selected: {scriptFile.name} ({(scriptFile.size / 1024).toFixed(1)} KB)
+                </p>
+              )}
+            </div>
+
+            <div className="form-group full-width">
+              <label htmlFor="script">Or Paste Script Text</label>
               <textarea
                 id="script"
                 rows={20}
                 value={scriptContent}
-                onChange={(e) => setScriptContent(e.target.value)}
-                placeholder="Paste your TV pilot script here...&#10;&#10;For testing, use the sample 'The Last Frontier' pilot script."
-                required
+                onChange={(e) => {
+                  setScriptContent(e.target.value)
+                  setScriptFile(null) // Clear file if text is pasted
+                }}
+                placeholder="Paste your TV pilot script here...&#10;&#10;Or use the file upload above."
+                disabled={!!scriptFile}
               />
             </div>
 
-            <button type="submit" disabled={loading}>
+            <button type="submit" disabled={loading || (!scriptFile && !scriptContent)}>
               {loading ? 'Analyzing Script...' : 'Generate Coverage Report'}
             </button>
           </form>
