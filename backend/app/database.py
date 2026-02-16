@@ -1,29 +1,31 @@
 """Database configuration and session management."""
 import os
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import NullPool
 from app.models import Base
 
 # Database URL - using SQLite for MVP, can upgrade to PostgreSQL later
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./coverageiq.db")
 
 # Create async engine with SQLite-specific settings for async operations
+# For SQLite with aiosqlite, we disable connection pooling entirely to avoid
+# concurrent access issues - each operation gets its own connection
 connect_args = {}
+engine_kwargs = {}
+
 if DATABASE_URL.startswith("sqlite"):
-    # SQLite-specific: allow concurrent access, use timeout for locks
+    # SQLite-specific: use timeout for locks
     connect_args = {
-        "check_same_thread": False,
         "timeout": 30
     }
+    # Disable connection pooling for SQLite - prevents concurrent access errors
+    engine_kwargs["poolclass"] = NullPool
 
 engine = create_async_engine(
     DATABASE_URL,
     echo=os.getenv("SQL_ECHO", "false").lower() == "true",
     connect_args=connect_args,
-    # Pool settings to prevent concurrent connection issues
-    pool_pre_ping=True,
-    pool_size=1,  # SQLite works best with single connection
-    max_overflow=0
+    **engine_kwargs
 )
 
 # Create async session maker
