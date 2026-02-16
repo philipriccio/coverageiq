@@ -77,7 +77,8 @@ class MoonshotClient:
         temperature: float = DEFAULT_TEMPERATURE,
         max_tokens: int = DEFAULT_MAX_TOKENS,
         response_format: Optional[Dict[str, str]] = None,
-        stream: bool = False
+        stream: bool = False,
+        timeout_override: Optional[float] = None
     ) -> Dict[str, Any]:
         """Send a chat completion request to Moonshot API.
         
@@ -112,14 +113,19 @@ class MoonshotClient:
             payload["response_format"] = response_format
         
         # Use explicit timeout configuration for all phases
+        # Adjust timeout based on max_tokens - larger responses need more time
+        # Rough estimate: ~3 seconds per 1000 tokens minimum, with 60s base
+        calculated_timeout = timeout_override or max(self.timeout, 60.0 + (max_tokens / 1000.0 * 3.0))
         timeout_config = httpx.Timeout(
-            connect=30.0,      # Time to establish connection
-            read=self.timeout, # Time to read response  
-            write=30.0,        # Time to send request
-            pool=30.0          # Time to get connection from pool
+            connect=30.0,          # Time to establish connection
+            read=calculated_timeout, # Time to read response - scales with expected output
+            write=60.0,            # Time to send request (increased for large prompts)
+            pool=30.0              # Time to get connection from pool
         )
+        print(f"[Moonshot] Using timeout: {calculated_timeout:.1f}s for {max_tokens} max_tokens")
         
-        print(f"[Moonshot] Sending request to {model}...")
+        print(f"[Moonshot] Sending request to {model} (max_tokens: {max_tokens})...")
+        print(f"[Moonshot] Request payload size: {len(str(payload))} chars")
         
         async with httpx.AsyncClient(timeout=timeout_config) as client:
             try:
@@ -153,7 +159,7 @@ class MoonshotClient:
                 
             except httpx.TimeoutException as e:
                 elapsed = time.time() - start_time
-                raise LLMError(f"Request timeout after {elapsed:.1f}s (timeout: {self.timeout}s): {str(e)}")
+                raise LLMError(f"Request timeout after {elapsed:.1f}s (timeout: {calculated_timeout:.1f}s, max_tokens: {max_tokens}): {str(e)}")
             except httpx.ConnectError as e:
                 raise LLMError(f"Connection error: {str(e)}. Check network connectivity.")
             except httpx.HTTPError as e:
@@ -165,7 +171,8 @@ class MoonshotClient:
         prompt: str,
         model: str = DEFAULT_MODEL,
         temperature: float = DEFAULT_TEMPERATURE,
-        expect_json: bool = True
+        expect_json: bool = True,
+        max_tokens: Optional[int] = None
     ) -> Dict[str, Any]:
         """Analyze script content with a custom prompt.
         
@@ -178,6 +185,7 @@ class MoonshotClient:
             model: Model to use
             temperature: Temperature for generation
             expect_json: Whether to expect and parse JSON response
+            max_tokens: Maximum tokens to generate (defaults to DEFAULT_MAX_TOKENS)
             
         Returns:
             Parsed response (JSON dict if expect_json=True, else string)
@@ -213,21 +221,45 @@ Provide your analysis based on the instructions above."""
         
         response_format = {"type": "json_object"} if expect_json else None
         
+        # Use provided max_tokens or default
+        token_limit = max_tokens if max_tokens is not None else self.DEFAULT_MAX_TOKENS
+        
+        print(f"[Moonshot] DEBUG: About to call chat_completion...")
         result = await self.chat_completion(
             messages=messages,
             model=model,
             temperature=temperature,
+            max_tokens=token_limit,
             response_format=response_format
         )
         
+        print(f"[Moonshot] DEBUG: chat_completion returned")
         # Extract the generated content
         content = result["choices"][0]["message"]["content"]
         
+        # Log token usage for debugging
+        usage = result.get("usage", {})
+        completion_tokens = usage.get("completion_tokens", 0)
+        print(f"[Moonshot] Response tokens used: {completion_tokens}/{token_limit}")
+        
         if expect_json:
+            print(f"[Moonshot] DEBUG: About to parse JSON (content length: {len(content)} chars)...")
             try:
-                return json.loads(content)
+                parsed = json.loads(content)
+                print(f"[Moonshot] JSON parsed successfully")
+                return parsed
             except json.JSONDecodeError as e:
-                raise LLMError(f"Failed to parse JSON response: {str(e)}\nContent: {content[:500]}")
+                # Check if response was likely truncated
+                if completion_tokens >= token_limit * 0.95:
+                    raise LLMError(
+                        f"JSON response appears truncated (used {completion_tokens}/{token_limit} tokens). "
+                        f"Parse error: {str(e)}. Consider increasing max_tokens for this analysis depth."
+                        f"\nContent preview: {content[:500]}..."
+                    )
+                raise LLMError(
+                    f"Failed to parse JSON response: {str(e)}\n"
+                    f"Content preview: {content[:500]}..."
+                )
         
         return {"content": content}
     
@@ -403,7 +435,8 @@ class ClaudeClient:
         prompt: str,
         model: str = DEFAULT_MODEL,
         temperature: float = DEFAULT_TEMPERATURE,
-        expect_json: bool = True
+        expect_json: bool = True,
+        max_tokens: Optional[int] = None
     ) -> Dict[str, Any]:
         """Analyze script content with a custom prompt.
         
@@ -415,6 +448,7 @@ class ClaudeClient:
             model: Model to use
             temperature: Temperature for generation
             expect_json: Whether to expect and parse JSON response
+            max_tokens: Maximum tokens to generate (defaults to DEFAULT_MAX_TOKENS)
             
         Returns:
             Parsed response (JSON dict if expect_json=True, else string)
@@ -442,7 +476,10 @@ Provide your analysis based on the instructions above."""
         
         system_prompt = "You are an expert script coverage analyst with 20+ years of experience reading screenplays and TV pilots for major studios and production companies. You provide professional, objective, and constructive coverage."
         
-        print(f"[Claude] Sending request to {model}...")
+        # Use provided max_tokens or default
+        token_limit = max_tokens if max_tokens is not None else self.DEFAULT_MAX_TOKENS
+        
+        print(f"[Claude] Sending request to {model} (max_tokens: {token_limit})...")
         
         try:
             # Add JSON instruction to system prompt if expecting JSON
@@ -451,7 +488,7 @@ Provide your analysis based on the instructions above."""
             
             response = await self._client.messages.create(
                 model=model,
-                max_tokens=self.DEFAULT_MAX_TOKENS,
+                max_tokens=token_limit,
                 temperature=temperature,
                 system=system_prompt,
                 messages=[
@@ -465,6 +502,12 @@ Provide your analysis based on the instructions above."""
             elapsed = time.time() - start_time
             print(f"[Claude] Response received in {elapsed:.1f}s")
             
+            # Extract usage info for debugging
+            usage = response.usage if hasattr(response, 'usage') else None
+            if usage:
+                output_tokens = getattr(usage, 'output_tokens', 0)
+                print(f"[Claude] Response tokens used: {output_tokens}/{token_limit}")
+            
             # Extract the generated content
             content = response.content[0].text
             
@@ -472,18 +515,40 @@ Provide your analysis based on the instructions above."""
                 # Try to extract JSON from the response (in case there's markdown)
                 try:
                     # First, try direct parsing
-                    return json.loads(content)
-                except json.JSONDecodeError:
+                    parsed = json.loads(content)
+                    print(f"[Claude] JSON parsed successfully")
+                    return parsed
+                except json.JSONDecodeError as e:
                     # Try to extract JSON from markdown code blocks
                     import re
                     json_match = re.search(r'```(?:json)?\s*(.*?)\s*```', content, re.DOTALL)
                     if json_match:
-                        return json.loads(json_match.group(1))
+                        try:
+                            parsed = json.loads(json_match.group(1))
+                            print(f"[Claude] JSON parsed from markdown block")
+                            return parsed
+                        except json.JSONDecodeError:
+                            pass
                     # Try to find JSON between curly braces
                     json_match = re.search(r'\{.*\}', content, re.DOTALL)
                     if json_match:
-                        return json.loads(json_match.group(0))
-                    raise LLMError(f"Failed to parse JSON response: {content[:500]}")
+                        try:
+                            parsed = json.loads(json_match.group(0))
+                            print(f"[Claude] JSON parsed from curly braces")
+                            return parsed
+                        except json.JSONDecodeError:
+                            pass
+                    
+                    # Check if response was likely truncated
+                    if usage and output_tokens >= token_limit * 0.95:
+                        raise LLMError(
+                            f"JSON response appears truncated (used {output_tokens}/{token_limit} tokens). "
+                            f"Parse error: {str(e)}. Consider increasing max_tokens for this analysis depth."
+                        )
+                    raise LLMError(
+                        f"Failed to parse JSON response: {str(e)}\n"
+                        f"Content preview: {content[:500]}..."
+                    )
             
             return {"content": content}
             

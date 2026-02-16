@@ -118,13 +118,23 @@ Use these as reference points for market positioning and quality assessment.
 
 {prompt}"""
             
+            # Determine max_tokens based on analysis depth
+            # Deep mode requires significantly more tokens for comprehensive output
+            depth_token_limits = {
+                "quick": 4000,      # Quick mode: smaller output
+                "standard": 8000,   # Standard mode: default
+                "deep": 20000       # Deep mode: large output for detailed analysis
+            }
+            max_tokens = depth_token_limits.get(analysis_depth, 8000)
+            print(f"[Analysis] Using max_tokens={max_tokens} for {analysis_depth} analysis")
+            
             # Determine if we need chunking based on script length
             # Kimi K2.5 128k model can handle ~96k tokens (~384k chars)
             # We use a conservative limit to leave room for prompt and response
             CHARS_PER_TOKEN = 4  # Rough estimate
             CONTEXT_LIMIT = 128000
             PROMPT_TOKENS = 4000  # Approximate prompt size
-            RESPONSE_TOKENS = 8000  # Expected response
+            RESPONSE_TOKENS = max_tokens  # Use depth-appropriate response size
             SAFETY_MARGIN = 10000
             
             available_for_script = (CONTEXT_LIMIT - PROMPT_TOKENS - RESPONSE_TOKENS - SAFETY_MARGIN) * CHARS_PER_TOKEN
@@ -140,6 +150,7 @@ Use these as reference points for market positioning and quality assessment.
             try:
                 if use_chunking:
                     print(f"[Analysis] Using chunking with Moonshot...")
+                    # For chunked analysis, use standard tokens per chunk
                     raw_result = await self.moonshot_client.analyze_with_chunking(
                         script_text=script_text,
                         prompt=prompt,
@@ -151,7 +162,8 @@ Use these as reference points for market positioning and quality assessment.
                         script_text=script_text,
                         prompt=prompt,
                         model=MoonshotClient.MODEL_KIMI_K2_5,
-                        expect_json=True
+                        expect_json=True,
+                        max_tokens=max_tokens
                     )
                 model_used = "moonshot-v1-128k"
                 print(f"[Analysis] Moonshot response received")
@@ -163,6 +175,7 @@ Use these as reference points for market positioning and quality assessment.
                 
                 try:
                     if use_chunking:
+                        # For chunked analysis, use standard tokens per chunk
                         raw_result = await self.claude_client.analyze_with_chunking(
                             script_text=script_text,
                             prompt=prompt,
@@ -173,7 +186,8 @@ Use these as reference points for market positioning and quality assessment.
                             script_text=script_text,
                             prompt=prompt,
                             model=ClaudeClient.MODEL_CLAUDE_SONNET,
-                            expect_json=True
+                            expect_json=True,
+                            max_tokens=max_tokens
                         )
                     model_used = ClaudeClient.MODEL_CLAUDE_SONNET
                     print("[Analysis] Claude fallback completed")
@@ -329,6 +343,7 @@ Use these as reference points for market positioning and quality assessment.
             AnalysisError: If save fails
         """
         try:
+            print(f"[Analysis] DEBUG: save_analysis_results - fetching report {report_id}...")
             # Fetch the report
             result = await db.execute(
                 select(CoverageReport).where(CoverageReport.id == report_id)
@@ -337,6 +352,8 @@ Use these as reference points for market positioning and quality assessment.
             
             if not report:
                 raise AnalysisError(f"Report {report_id} not found")
+            
+            print(f"[Analysis] DEBUG: save_analysis_results - report found, updating fields...")
             
             # Extract subscores for storage
             subscores_data = results.get("subscores", {})
@@ -380,12 +397,16 @@ Use these as reference points for market positioning and quality assessment.
             # Track which model was used (for cost tracking and debugging)
             report.model_used = model_used
             
+            print(f"[Analysis] DEBUG: save_analysis_results - about to commit...")
             await db.commit()
+            print(f"[Analysis] DEBUG: save_analysis_results - commit successful, refreshing...")
             await db.refresh(report)
+            print(f"[Analysis] DEBUG: save_analysis_results - refresh successful, returning report")
             
             return report
             
         except Exception as e:
+            print(f"[Analysis] DEBUG: save_analysis_results - EXCEPTION: {type(e).__name__}: {e}")
             await db.rollback()
             raise AnalysisError(f"Failed to save analysis results: {str(e)}")
     
@@ -476,6 +497,7 @@ async def run_coverage_analysis(
     pipeline = get_analysis_pipeline()
     
     try:
+        print(f"[Analysis] DEBUG: Starting analyze_script...")
         # Run analysis (with automatic fallback to Claude if needed)
         results, model_used = await pipeline.analyze_script(
             script_text=script_text,
@@ -486,13 +508,17 @@ async def run_coverage_analysis(
             analysis_depth=analysis_depth,
             db=db
         )
+        print(f"[Analysis] DEBUG: analyze_script completed, model_used={model_used}")
         
         # Save results with model tracking
+        print(f"[Analysis] DEBUG: About to call save_analysis_results...")
         report = await pipeline.save_analysis_results(report_id, results, model_used, db)
+        print(f"[Analysis] DEBUG: save_analysis_results completed successfully")
         
         return report
         
     except Exception as e:
+        print(f"[Analysis] DEBUG: Exception in run_coverage_analysis: {type(e).__name__}: {e}")
         # Mark as failed
         await pipeline.mark_failed(report_id, str(e), db)
         raise AnalysisError(f"Coverage analysis failed: {str(e)}")

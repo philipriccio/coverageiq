@@ -342,6 +342,8 @@ class JobManager:
             # Run the actual analysis with a hard timeout
             # This prevents infinite hangs if the LLM client misbehaves
             print(f"[Job {job_id}] Starting analysis with 300s timeout...")
+            print(f"[Job {job_id}] DEBUG: About to call run_coverage_analysis...")
+            
             report = await asyncio.wait_for(
                 run_coverage_analysis(
                     script_text=script_text,
@@ -354,19 +356,27 @@ class JobManager:
                 ),
                 timeout=300.0  # 5 minute hard timeout
             )
+            
+            print(f"[Job {job_id}] DEBUG: run_coverage_analysis returned successfully")
             print(f"[Job {job_id}] Analysis completed successfully")
             
             # Cancel progress simulation
+            print(f"[Job {job_id}] DEBUG: Cancelling progress simulation...")
             progress_task.cancel()
             try:
                 await progress_task
+                print(f"[Job {job_id}] DEBUG: Progress simulation cancelled successfully")
             except asyncio.CancelledError:
+                print(f"[Job {job_id}] DEBUG: Progress simulation CancelledError caught (expected)")
                 pass
             
             # Update progress: processing results
+            print(f"[Job {job_id}] DEBUG: About to update progress to 90%...")
             await cls.update_progress(job_id, 90, db=db)
+            print(f"[Job {job_id}] DEBUG: Progress updated to 90%")
             await asyncio.sleep(0.1)  # Brief pause for UI effect
             
+            print(f"[Job {job_id}] DEBUG: About to return report...")
             return report
             
         except asyncio.TimeoutError:
@@ -447,9 +457,30 @@ class JobManager:
                     break
                 
                 await asyncio.sleep(interval * 2)
-                # Just touch the updated_at timestamp to show activity
-                async with AsyncSessionLocal() as session:
-                    await cls._do_update_progress(job_id, end, None, session)
+                
+                # Check if job status has changed to terminal state (analysis completed)
+                # This prevents unnecessary updates after analysis is done
+                try:
+                    async with AsyncSessionLocal() as session:
+                        from sqlalchemy import select
+                        from app.models import AnalysisJob, JobStatus
+                        result = await session.execute(
+                            select(AnalysisJob.status).where(AnalysisJob.id == job_id)
+                        )
+                        current_status = result.scalar_one_or_none()
+                        if current_status in (JobStatus.COMPLETED, JobStatus.FAILED):
+                            print(f"[Job {job_id}] Progress simulation detected terminal state {current_status.value}, exiting")
+                            break
+                        
+                        # Just touch the updated_at timestamp to show activity
+                        await cls._do_update_progress(job_id, end, None, session)
+                except asyncio.CancelledError:
+                    raise  # Re-raise to handle cancellation properly
+                except Exception as e:
+                    print(f"[Job {job_id}] Progress simulation DB check error: {e}")
+                    # Continue anyway - don't fail the simulation on DB error
+                    pass
+                    
                 end_update_count += 1
             
             print(f"[Job {job_id}] Progress simulation completed after {end_update_count} end-state updates")
