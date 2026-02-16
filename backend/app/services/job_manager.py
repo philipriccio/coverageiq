@@ -294,8 +294,9 @@ class JobManager:
         
         # Simulate progress during analysis
         # In a real implementation, the analysis service would emit progress events
+        # Note: Don't pass db session - _simulate_progress_updates creates its own
         progress_task = asyncio.create_task(
-            cls._simulate_progress_updates(job_id, 15, 60, db)
+            cls._simulate_progress_updates(job_id, 15, 60)
         )
         
         try:
@@ -340,19 +341,22 @@ class JobManager:
         cls,
         job_id: str,
         start: int,
-        end: int,
-        db: AsyncSession
+        end: int
     ):
         """Simulate progress updates during long-running operations.
         
         This provides visual feedback to users while the LLM processes.
+        
+        Note: Creates its own session to avoid concurrent access issues.
         """
         try:
             current = start
             while current < end:
                 await asyncio.sleep(2)  # Update every 2 seconds
                 current = min(end, current + 5)
-                await cls.update_progress(job_id, current, db=db)
+                # Create new session for each update to avoid concurrent access
+                async with AsyncSessionLocal() as session:
+                    await cls._do_update_progress(job_id, current, None, session)
         except asyncio.CancelledError:
             # Expected when analysis completes
             pass
