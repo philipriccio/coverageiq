@@ -37,9 +37,48 @@ class ScriptDetailResponse(BaseModel):
     report_count: int
 
 
-@router.post("/upload", response_model=ScriptUploadResponse)
-async def upload_script(
+class TextUploadRequest(BaseModel):
+    """Request model for text-based script upload."""
+    title: str
+    content: str
+    content_type: str = "tv_pilot"
+
+
+@router.post("/upload", response_model=dict)
+async def upload_script_text(
+    request: TextUploadRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """Upload script as raw text (no file)."""
+    script_id = str(uuid.uuid4())
+    
+    # Create minimal metadata for text uploads
+    script_metadata = ScriptMetadata(
+        id=script_id,
+        user_id="default_user",
+        filename_hash="text_upload",
+        file_hash="text_content",
+        format=ScriptFormat.PDF,  # Default to PDF format
+        title=request.title,
+        page_count=len(request.content) // 250,  # Rough estimate
+        created_at=datetime.utcnow()
+    )
+    
+    db.add(script_metadata)
+    await db.commit()
+    
+    return {
+        "script_id": script_id,
+        "title": request.title,
+        "message": "Script uploaded successfully"
+    }
+
+
+@router.post("/upload-file", response_model=dict)
+async def upload_script_file(
     file: UploadFile = File(...),
+    title: Optional[str] = Form(None),
+    content_type: str = Form("tv_pilot"),
     db: AsyncSession = Depends(get_db)
 ):
     """Upload a script file (PDF or FDX) for analysis.
@@ -126,15 +165,16 @@ async def upload_script(
     
     # IMPORTANT: extraction_result["text"] is NOT stored
     # It exists only in this function's scope and will be garbage collected
-    # The text would be passed to the analysis service here
+    # But we return it here so the frontend can immediately use it for analysis
     
-    return ScriptUploadResponse(
-        script_id=script_id,
-        title=extraction_result.get("title"),
-        page_count=extraction_result.get("page_count", 0),
-        format=extraction_result["format"],
-        message="Script uploaded successfully. Use this ID to start coverage analysis."
-    )
+    return {
+        "script_id": script_id,
+        "title": extraction_result.get("title") or title,
+        "page_count": extraction_result.get("page_count", 0),
+        "format": extraction_result["format"],
+        "extracted_text": extraction_result["text"],
+        "message": "Script uploaded successfully. Use this ID to start coverage analysis."
+    }
 
 
 @router.get("/list")
