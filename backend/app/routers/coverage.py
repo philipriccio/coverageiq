@@ -659,3 +659,84 @@ async def export_to_pdf(
         raise HTTPException(status_code=500, detail=f"PDF export failed: {str(e)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
+
+
+# Admin endpoints for system maintenance
+
+@router.post("/admin/cleanup-stuck-jobs")
+async def cleanup_stuck_jobs(db: AsyncSession = Depends(get_db)):
+    """Admin endpoint to mark stuck jobs as failed.
+    
+    Jobs are considered "stuck" if they've been in QUEUED or PROCESSING
+    state for more than 10 minutes without an update.
+    """
+    from datetime import datetime, timedelta
+    from sqlalchemy import select
+    from app.models import AnalysisJob, JobStatus
+    
+    stuck_threshold = datetime.utcnow() - timedelta(minutes=10)
+    
+    result = await db.execute(
+        select(AnalysisJob).where(
+            AnalysisJob.status.in_([JobStatus.QUEUED, JobStatus.PROCESSING]),
+            AnalysisJob.updated_at < stuck_threshold
+        )
+    )
+    stuck_jobs = result.scalars().all()
+    
+    cleaned_count = 0
+    for job in stuck_jobs:
+        try:
+            job.status = JobStatus.FAILED
+            job.error_message = "Job marked as failed due to timeout (admin cleanup)"
+            job.completed_at = datetime.utcnow()
+            job.updated_at = datetime.utcnow()
+            cleaned_count += 1
+        except Exception as e:
+            print(f"Failed to clean up job {job.id}: {e}")
+    
+    if cleaned_count > 0:
+        await db.commit()
+    
+    return {
+        "cleaned_up": cleaned_count,
+        "total_stuck": len(stuck_jobs),
+        "job_ids": [j.id for j in stuck_jobs]
+    }
+
+
+@router.get("/admin/job-status")
+async def get_all_job_status(db: AsyncSession = Depends(get_db)):
+    """Admin endpoint to get status of all jobs."""
+    from sqlalchemy import select, func
+    from app.models import AnalysisJob, JobStatus
+    
+    # Get counts by status
+    result = await db.execute(
+        select(AnalysisJob.status, func.count(AnalysisJob.id))
+        .group_by(AnalysisJob.status)
+    )
+    status_counts = {status.value: count for status, count in result.all()}
+    
+    # Get active jobs (queued or processing)
+    result = await db.execute(
+        select(AnalysisJob)
+        .where(AnalysisJob.status.in_([JobStatus.QUEUED, JobStatus.PROCESSING]))
+        .order_by(AnalysisJob.created_at.desc())
+    )
+    active_jobs = result.scalars().all()
+    
+    return {
+        "counts": status_counts,
+        "active_jobs": [
+            {
+                "id": j.id,
+                "status": j.status.value,
+                "progress": j.progress,
+                "created_at": j.created_at.isoformat(),
+                "updated_at": j.updated_at.isoformat(),
+                "age_seconds": (datetime.utcnow() - j.created_at).total_seconds()
+            }
+            for j in active_jobs
+        ]
+    }

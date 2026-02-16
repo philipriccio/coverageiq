@@ -131,20 +131,22 @@ Use these as reference points for market positioning and quality assessment.
             
             use_chunking = len(script_text) > available_for_script
             
+            print(f"[Analysis] Script length: {len(script_text)} chars, chunking: {use_chunking}")
+            
             # Try Moonshot first, fallback to Claude on content moderation
             model_used = None
             raw_result = None
             
             try:
                 if use_chunking:
-                    print(f"Script length ({len(script_text)} chars) exceeds context window. Using chunking with Moonshot.")
+                    print(f"[Analysis] Using chunking with Moonshot...")
                     raw_result = await self.moonshot_client.analyze_with_chunking(
                         script_text=script_text,
                         prompt=prompt,
                         model=MoonshotClient.MODEL_KIMI_K2_5
                     )
                 else:
-                    print(f"Analyzing script ({len(script_text)} chars) with Moonshot...")
+                    print(f"[Analysis] Sending to Moonshot...")
                     raw_result = await self.moonshot_client.analyze_script(
                         script_text=script_text,
                         prompt=prompt,
@@ -152,11 +154,12 @@ Use these as reference points for market positioning and quality assessment.
                         expect_json=True
                     )
                 model_used = "moonshot-v1-128k"
+                print(f"[Analysis] Moonshot response received")
                 
             except LLMContentModerationError as e:
                 # Moonshot rejected content - fallback to Claude
-                print(f"Moonshot rejected content (moderation): {str(e)}")
-                print("Falling back to Claude for analysis...")
+                print(f"[Analysis] Moonshot rejected content (moderation): {str(e)}")
+                print("[Analysis] Falling back to Claude...")
                 
                 try:
                     if use_chunking:
@@ -172,8 +175,8 @@ Use these as reference points for market positioning and quality assessment.
                             model=ClaudeClient.MODEL_CLAUDE_SONNET,
                             expect_json=True
                         )
-                    model_used = "claude-3-5-sonnet-20241022"
-                    print("Claude fallback analysis completed successfully")
+                    model_used = ClaudeClient.MODEL_CLAUDE_SONNET
+                    print("[Analysis] Claude fallback completed")
                     
                 except LLMError as claude_error:
                     raise AnalysisError(f"Both Moonshot and Claude failed. Claude error: {str(claude_error)}")
@@ -185,6 +188,7 @@ Use these as reference points for market positioning and quality assessment.
             if raw_result is None or model_used is None:
                 raise AnalysisError("Analysis returned no results")
             
+            print(f"[Analysis] Parsing results...")
             # Parse and validate the result
             parsed_result = self._parse_analysis_result(raw_result)
             
@@ -195,13 +199,14 @@ Use these as reference points for market positioning and quality assessment.
             end_time = datetime.utcnow()
             processing_time = (end_time - start_time).total_seconds()
             
-            print(f"Analysis completed in {processing_time:.1f}s using {model_used}")
+            print(f"[Analysis] Completed in {processing_time:.1f}s using {model_used}")
             
             return parsed_result, model_used
             
         except AnalysisError:
             raise
         except Exception as e:
+            print(f"[Analysis] Unexpected error: {type(e).__name__}: {e}")
             raise AnalysisError(f"Analysis pipeline failed: {str(e)}")
     
     def _parse_analysis_result(self, raw_result: Dict[str, Any]) -> Dict[str, Any]:

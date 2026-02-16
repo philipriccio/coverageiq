@@ -2,10 +2,11 @@
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import init_db
+from app.database import init_db, get_db
 from app.routers import scripts, coverage
 
 # Get CORS origins from environment variable or use defaults
@@ -56,13 +57,43 @@ def root():
 
 
 @app.get("/health")
-def health():
-    """Health check endpoint."""
-    return {
+async def health(db: AsyncSession = Depends(get_db)):
+    """Health check endpoint with dependency verification."""
+    from datetime import datetime, timedelta
+    from sqlalchemy import select, func
+    from app.models import AnalysisJob, JobStatus
+    
+    status = {
         "status": "healthy",
         "version": "0.2.0",
         "privacy_compliant": True
     }
+    
+    # Check database connectivity
+    try:
+        await db.execute(select(1))
+        status["database"] = "connected"
+    except Exception as e:
+        status["database"] = f"error: {str(e)}"
+        status["status"] = "degraded"
+    
+    # Check for stuck jobs
+    try:
+        stuck_threshold = datetime.utcnow() - timedelta(minutes=10)
+        result = await db.execute(
+            select(func.count(AnalysisJob.id)).where(
+                AnalysisJob.status.in_([JobStatus.QUEUED, JobStatus.PROCESSING]),
+                AnalysisJob.updated_at < stuck_threshold
+            )
+        )
+        stuck_count = result.scalar() or 0
+        status["stuck_jobs"] = stuck_count
+        if stuck_count > 0:
+            status["status"] = "degraded"
+    except Exception as e:
+        status["stuck_jobs_check"] = f"error: {str(e)}"
+    
+    return status
 
 
 @app.get("/api/models")

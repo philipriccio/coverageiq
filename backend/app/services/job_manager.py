@@ -9,7 +9,7 @@ Manages the lifecycle of async analysis jobs including:
 import asyncio
 import hashlib
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, Optional, Callable, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -128,9 +128,14 @@ class JobManager:
                     job.status = status
                 job.updated_at = datetime.utcnow()
                 await db.commit()
+        except asyncio.CancelledError:
+            await db.rollback()
+            raise  # Don't suppress cancellation
         except Exception as e:
             await db.rollback()
-            print(f"Failed to update job progress: {e}")
+            print(f"[Job {job_id}] Failed to update progress: {type(e).__name__}: {e}")
+            # Don't suppress - propagate to make failures visible
+            raise
     
     @classmethod
     async def mark_completed(
@@ -160,9 +165,14 @@ class JobManager:
                 job.completed_at = datetime.utcnow()
                 job.updated_at = datetime.utcnow()
                 await db.commit()
+                print(f"[Job {job_id}] Marked as completed")
+        except asyncio.CancelledError:
+            await db.rollback()
+            raise
         except Exception as e:
             await db.rollback()
-            print(f"Failed to mark job as completed: {e}")
+            print(f"[Job {job_id}] Failed to mark completed: {type(e).__name__}: {e}")
+            raise
     
     @classmethod
     async def mark_failed(
@@ -193,9 +203,14 @@ class JobManager:
                 job.completed_at = datetime.utcnow()
                 job.updated_at = datetime.utcnow()
                 await db.commit()
+                print(f"[Job {job_id}] Marked as failed: {error_message[:100]}")
+        except asyncio.CancelledError:
+            await db.rollback()
+            raise
         except Exception as e:
             await db.rollback()
-            print(f"Failed to mark job as failed: {e}")
+            print(f"[Job {job_id}] Failed to mark failed: {type(e).__name__}: {e}")
+            raise
     
     @classmethod
     def start_background_task(
@@ -233,6 +248,8 @@ class JobManager:
             script_text: Full script text
             report_id: Report UUID
         """
+        print(f"[Job {job_id}] Starting background analysis task")
+        
         async with AsyncSessionLocal() as db:
             try:
                 # Get job details
@@ -242,11 +259,25 @@ class JobManager:
                 job = result.scalar_one_or_none()
                 
                 if not job:
-                    print(f"Job {job_id} not found")
+                    print(f"[Job {job_id}] Job not found")
+                    return
+                
+                # Check if job is too old (stuck from previous attempt)
+                job_age = datetime.utcnow() - job.created_at
+                if job_age > timedelta(minutes=10):
+                    error_msg = f"Job exceeded maximum age ({job_age.total_seconds()/60:.1f} minutes)"
+                    print(f"[Job {job_id}] {error_msg}")
+                    await cls.mark_failed(job_id, error_msg, db)
+                    return
+                
+                # Check if job is already in terminal state
+                if job.status in (JobStatus.COMPLETED, JobStatus.FAILED):
+                    print(f"[Job {job_id}] Job already in terminal state: {job.status.value}")
                     return
                 
                 # Update to processing status
                 await cls.update_progress(job_id, 5, JobStatus.PROCESSING, db)
+                print(f"[Job {job_id}] Updated to PROCESSING status")
                 
                 # Run analysis with progress callbacks
                 report = await cls._run_analysis_with_progress(
@@ -262,10 +293,19 @@ class JobManager:
                 
                 # Mark as completed
                 await cls.mark_completed(job_id, db)
+                print(f"[Job {job_id}] Analysis completed successfully")
                 
+            except asyncio.CancelledError:
+                print(f"[Job {job_id}] Job was cancelled")
+                await cls.mark_failed(job_id, "Job was cancelled", db)
+                raise  # Re-raise to propagate cancellation
+            except AnalysisError as e:
+                error_msg = f"Analysis failed: {str(e)}"
+                print(f"[Job {job_id}] {error_msg}")
+                await cls.mark_failed(job_id, error_msg, db)
             except Exception as e:
-                error_msg = str(e)
-                print(f"Job {job_id} failed: {error_msg}")
+                error_msg = f"Unexpected error: {type(e).__name__}: {str(e)}"
+                print(f"[Job {job_id}] {error_msg}")
                 await cls.mark_failed(job_id, error_msg, db)
     
     @classmethod
@@ -284,32 +324,37 @@ class JobManager:
         
         Progress stages:
         - 5%: Starting analysis
-        - 25%: Script processed, sending to LLM
-        - 50%: LLM analysis in progress
-        - 75%: Processing LLM response
+        - 10%: Script processed
+        - 15-85%: LLM analysis in progress (simulated)
+        - 90%: Processing results
         - 100%: Complete
         """
         # Update progress: starting (5% already set)
         await cls.update_progress(job_id, 10, db=db)
         
-        # Simulate progress during analysis
-        # In a real implementation, the analysis service would emit progress events
-        # Note: Don't pass db session - _simulate_progress_updates creates its own
+        # Simulate progress during analysis - now runs up to 85%
+        # This provides visual feedback while the LLM processes
         progress_task = asyncio.create_task(
-            cls._simulate_progress_updates(job_id, 15, 60)
+            cls._simulate_progress_updates(job_id, 15, 85, interval=3)
         )
         
         try:
-            # Run the actual analysis
-            report = await run_coverage_analysis(
-                script_text=script_text,
-                report_id=report_id,
-                script_id=script_id,
-                db=db,
-                genre=genre,
-                comps=comps,
-                analysis_depth=analysis_depth
+            # Run the actual analysis with a hard timeout
+            # This prevents infinite hangs if the LLM client misbehaves
+            print(f"[Job {job_id}] Starting analysis with 300s timeout...")
+            report = await asyncio.wait_for(
+                run_coverage_analysis(
+                    script_text=script_text,
+                    report_id=report_id,
+                    script_id=script_id,
+                    db=db,
+                    genre=genre,
+                    comps=comps,
+                    analysis_depth=analysis_depth
+                ),
+                timeout=300.0  # 5 minute hard timeout
             )
+            print(f"[Job {job_id}] Analysis completed successfully")
             
             # Cancel progress simulation
             progress_task.cancel()
@@ -319,21 +364,29 @@ class JobManager:
                 pass
             
             # Update progress: processing results
-            await cls.update_progress(job_id, 75, db=db)
-            await asyncio.sleep(0.5)  # Brief pause for UI effect
-            
-            # Final progress
             await cls.update_progress(job_id, 90, db=db)
+            await asyncio.sleep(0.1)  # Brief pause for UI effect
             
             return report
             
-        except Exception:
+        except asyncio.TimeoutError:
+            # Cancel progress simulation on timeout
+            progress_task.cancel()
+            try:
+                await progress_task
+            except asyncio.CancelledError:
+                pass
+            print(f"[Job {job_id}] Analysis timed out after 300s")
+            raise AnalysisError("Analysis timed out after 5 minutes. The LLM service may be experiencing issues.")
+            
+        except Exception as e:
             # Cancel progress simulation on error
             progress_task.cancel()
             try:
                 await progress_task
             except asyncio.CancelledError:
                 pass
+            print(f"[Job {job_id}] Analysis failed: {type(e).__name__}: {e}")
             raise
     
     @classmethod
@@ -341,25 +394,74 @@ class JobManager:
         cls,
         job_id: str,
         start: int,
-        end: int
+        end: int,
+        interval: float = 2.0,
+        max_duration: float = 300.0
     ):
         """Simulate progress updates during long-running operations.
         
         This provides visual feedback to users while the LLM processes.
         
+        Args:
+            job_id: Job UUID
+            start: Starting progress percentage
+            end: Ending progress percentage  
+            interval: Seconds between updates (default 2.0)
+            max_duration: Maximum time to run simulation (default 300s = 5 min)
+            
         Note: Creates its own session to avoid concurrent access issues.
         """
+        start_time = asyncio.get_event_loop().time()
+        
         try:
             current = start
+            # Calculate increment to reach end in reasonable time
+            # Aim for about 30 updates max to reach end
+            total_range = end - start
+            increment = max(1, total_range // 30)
+            
             while current < end:
-                await asyncio.sleep(2)  # Update every 2 seconds
-                current = min(end, current + 5)
+                # Check if we've exceeded max duration
+                elapsed = asyncio.get_event_loop().time() - start_time
+                if elapsed > max_duration:
+                    print(f"[Job {job_id}] Progress simulation reached max duration at {current}%")
+                    break
+                
+                await asyncio.sleep(interval)
+                current = min(end, current + increment)
                 # Create new session for each update to avoid concurrent access
                 async with AsyncSessionLocal() as session:
                     await cls._do_update_progress(job_id, current, None, session)
+                    
+            # Keep updating at end value for a limited time (not infinite)
+            # This prevents progress from appearing "stuck" at end
+            # but ensures we don't run forever if cancellation fails
+            max_end_updates = 30  # ~60 seconds of end-state updates at interval*2
+            end_update_count = 0
+            
+            while end_update_count < max_end_updates:
+                # Check if we've exceeded max duration
+                elapsed = asyncio.get_event_loop().time() - start_time
+                if elapsed > max_duration:
+                    print(f"[Job {job_id}] Progress simulation max duration reached")
+                    break
+                
+                await asyncio.sleep(interval * 2)
+                # Just touch the updated_at timestamp to show activity
+                async with AsyncSessionLocal() as session:
+                    await cls._do_update_progress(job_id, end, None, session)
+                end_update_count += 1
+            
+            print(f"[Job {job_id}] Progress simulation completed after {end_update_count} end-state updates")
+                    
         except asyncio.CancelledError:
             # Expected when analysis completes
-            pass
+            print(f"[Job {job_id}] Progress simulation cancelled as expected")
+            raise  # Re-raise to properly signal cancellation
+        except Exception as e:
+            print(f"[Job {job_id}] Progress simulation error: {type(e).__name__}: {e}")
+            # Don't suppress - let it propagate for visibility
+            raise
     
     @classmethod
     def cancel_job(cls, job_id: str) -> bool:
