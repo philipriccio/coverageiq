@@ -1,0 +1,28 @@
+# Render Blueprint for CoverageIQ Backend
+# Deploy with: https://render.com/blueprints
+
+services:
+  - type: web
+    name: coverageiq-backend
+    runtime: python
+    region: oregon
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    rootDir: backend
+    envVars:
+      - key: DATABASE_URL
+        value: sqlite:///./coverageiq.db
+      - key: MOONSHOT_API_KEY
+        sync: false  # Set this manually in Render dashboard
+      - key: CORS_ORIGINS
+        value: "https://coverageiq-frontend.pages.dev,http://localhost:5173"
+    autoDeploy: true
+
+# Instructions:
+# 1. Push this repo to GitHub
+# 2. Connect your GitHub account to Render
+# 3. Click "New +" -> "Blueprint" in Render dashboard
+# 4. Select this repository
+# 5. Add your MOONSHOT_API_KEY environment variable
+# 6. Deploy!
