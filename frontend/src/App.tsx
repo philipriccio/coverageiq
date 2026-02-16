@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import axios from 'axios'
 import './App.css'
+import { ProgressBar } from './components/ProgressBar'
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
@@ -44,6 +45,17 @@ interface CoverageReport {
   evidence_quotes: EvidenceQuote[]
   
   model_used: string
+}
+
+interface JobStatus {
+  job_id: string
+  report_id: string | null
+  status: 'queued' | 'processing' | 'completed' | 'failed'
+  progress: number
+  error_message?: string
+  created_at: string
+  updated_at: string
+  completed_at?: string
 }
 
 // Collapsible Section Component
@@ -290,16 +302,117 @@ function App() {
   const [comps, setComps] = useState('')
   const [analysisDepth, setAnalysisDepth] = useState('standard')
   
-  const [loading, setLoading] = useState(false)
+  // Async job state
+  const [, setJobId] = useState<string | null>(null)
+  const [jobStatus, setJobStatus] = useState<JobStatus | null>(null)
+  const [isAnalyzing, setIsAnalyzing] = useState(false)
+  
   const [report, setReport] = useState<CoverageReport | null>(null)
   const [error, setError] = useState('')
   const [exporting, setExporting] = useState({ pdf: false, googleDoc: false })
+  
+  // Polling ref
+  const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const abortControllerRef = useRef<AbortController | null>(null)
+
+  // Cleanup polling on unmount
+  useEffect(() => {
+    return () => {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current)
+      }
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort()
+      }
+    }
+  }, [])
+
+  // Poll job status
+  const startPolling = useCallback((jobId: string, reportId: string) => {
+    // Clear any existing polling
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current)
+    }
+
+    // Create new abort controller for this job
+    abortControllerRef.current = new AbortController()
+
+    // Poll immediately, then every 2 seconds
+    const pollStatus = async () => {
+      try {
+        const response = await axios.get(
+          `${API_BASE}/api/coverage/jobs/${jobId}/status`,
+          { signal: abortControllerRef.current?.signal }
+        )
+        
+        const status: JobStatus = response.data
+        setJobStatus(status)
+
+        if (status.status === 'completed') {
+          // Stop polling and fetch the report
+          if (pollingIntervalRef.current) {
+            clearInterval(pollingIntervalRef.current)
+            pollingIntervalRef.current = null
+          }
+          await fetchReport(reportId)
+        } else if (status.status === 'failed') {
+          // Stop polling and show error
+          if (pollingIntervalRef.current) {
+            clearInterval(pollingIntervalRef.current)
+            pollingIntervalRef.current = null
+          }
+          setIsAnalyzing(false)
+          setError(status.error_message || 'Analysis failed')
+          setJobId(null)
+        }
+        // Otherwise continue polling (queued or processing)
+      } catch (err: any) {
+        if (err.name === 'CanceledError' || err.name === 'AbortError') {
+          // Polling was cancelled, ignore
+          return
+        }
+        console.error('Polling error:', err)
+        // Don't stop polling on transient errors
+      }
+    }
+
+    // Initial poll
+    pollStatus()
+
+    // Start interval
+    pollingIntervalRef.current = setInterval(pollStatus, 2000)
+  }, [])
+
+  // Fetch completed report
+  const fetchReport = async (reportId: string) => {
+    try {
+      const response = await axios.get(`${API_BASE}/api/coverage/${reportId}`)
+      setReport(response.data)
+      setIsAnalyzing(false)
+      setJobId(null)
+      setJobStatus(null)
+    } catch (err: any) {
+      setIsAnalyzing(false)
+      setError(err.response?.data?.detail || 'Failed to fetch report')
+      setJobId(null)
+    }
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setLoading(true)
+    
+    // Reset state
+    setIsAnalyzing(true)
     setError('')
     setReport(null)
+    setJobId(null)
+    setJobStatus(null)
+    
+    // Clear any existing polling
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current)
+      pollingIntervalRef.current = null
+    }
     
     try {
       let scriptId: string
@@ -330,8 +443,8 @@ function App() {
         scriptText = scriptContent
       }
       
-      // Step 2: Request coverage generation (sync for now)
-      const coverageRes = await axios.post(`${API_BASE}/api/coverage/generate-sync`, {
+      // Start async analysis
+      const asyncRes = await axios.post(`${API_BASE}/api/coverage/generate-async`, {
         script_id: scriptId,
         script_text: scriptText,
         genre: genre,
@@ -339,13 +452,35 @@ function App() {
         analysis_depth: analysisDepth
       })
       
-      setReport(coverageRes.data)
+      const { job_id: newJobId, report_id } = asyncRes.data
+      setJobId(newJobId)
+      
+      // Start polling for status
+      startPolling(newJobId, report_id)
+      
     } catch (err: any) {
       console.error('Error:', err)
+      setIsAnalyzing(false)
       setError(err.response?.data?.detail || err.message || 'An error occurred')
-    } finally {
-      setLoading(false)
     }
+  }
+
+  const handleCancel = () => {
+    // Stop polling
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current)
+      pollingIntervalRef.current = null
+    }
+    
+    // Abort any in-flight requests
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+    }
+    
+    setIsAnalyzing(false)
+    setJobId(null)
+    setJobStatus(null)
+    setError('Analysis cancelled')
   }
 
   const handleExportPDF = async () => {
@@ -423,6 +558,20 @@ function App() {
       </header>
 
       <main>
+        {/* Analysis Progress Overlay */}
+        {isAnalyzing && (
+          <div className="analyzing-overlay">
+            <div className="analyzing-content">
+              <ProgressBar
+                progress={jobStatus?.progress || 0}
+                status={jobStatus?.status || 'queued'}
+                message={jobStatus?.status === 'queued' ? 'Starting analysis...' : undefined}
+                onCancel={handleCancel}
+              />
+            </div>
+          </div>
+        )}
+
         {!report ? (
           <form onSubmit={handleSubmit}>
             <div className="form-row">
@@ -434,6 +583,7 @@ function App() {
                   value={scriptTitle}
                   onChange={(e) => setScriptTitle(e.target.value)}
                   placeholder="e.g., The Last Frontier"
+                  disabled={isAnalyzing}
                 />
               </div>
               
@@ -443,6 +593,7 @@ function App() {
                   id="genre"
                   value={genre}
                   onChange={(e) => setGenre(e.target.value)}
+                  disabled={isAnalyzing}
                 >
                   <option value="drama">Drama</option>
                   <option value="comedy">Comedy</option>
@@ -464,6 +615,7 @@ function App() {
                   value={comps}
                   onChange={(e) => setComps(e.target.value)}
                   placeholder="e.g., Northern Exposure, ER"
+                  disabled={isAnalyzing}
                 />
               </div>
               
@@ -473,6 +625,7 @@ function App() {
                   id="depth"
                   value={analysisDepth}
                   onChange={(e) => setAnalysisDepth(e.target.value)}
+                  disabled={isAnalyzing}
                 >
                   <option value="quick">Quick (~2 min)</option>
                   <option value="standard">Standard (~5 min)</option>
@@ -494,6 +647,7 @@ function App() {
                     setScriptContent('') // Clear text if file is selected
                   }
                 }}
+                disabled={isAnalyzing}
               />
               {scriptFile && (
                 <p className="file-selected">
@@ -513,12 +667,12 @@ function App() {
                   setScriptFile(null) // Clear file if text is pasted
                 }}
                 placeholder="Paste your TV pilot script here...&#10;&#10;Or use the file upload above."
-                disabled={!!scriptFile}
+                disabled={!!scriptFile || isAnalyzing}
               />
             </div>
 
-            <button type="submit" disabled={loading || (!scriptFile && !scriptContent)}>
-              {loading ? 'Analyzing Script...' : 'Generate Coverage Report'}
+            <button type="submit" disabled={isAnalyzing || (!scriptFile && !scriptContent)}>
+              {isAnalyzing ? 'Analyzing Script...' : 'Generate Coverage Report'}
             </button>
           </form>
         ) : (

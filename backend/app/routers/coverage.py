@@ -9,8 +9,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.database import get_db
-from app.models import CoverageReport, ScriptMetadata, ReportStatus, Recommendation
+from app.models import CoverageReport, ScriptMetadata, ReportStatus, Recommendation, AnalysisJob, JobStatus
 from app.services.analysis import run_coverage_analysis, AnalysisError
+from app.services.job_manager import JobManager
 from app.services.google_docs_export import (
     get_google_docs_exporter, GoogleDocsExportError
 )
@@ -25,6 +26,35 @@ class CoverageRequest(BaseModel):
     genre: Optional[str] = None
     comps: Optional[List[str]] = None  # Comparable films
     analysis_depth: str = "standard"  # quick, standard, deep
+
+
+class AsyncCoverageRequest(BaseModel):
+    """Request to start async coverage analysis."""
+    script_id: str
+    script_text: str  # Script content for processing
+    genre: Optional[str] = None
+    comps: Optional[List[str]] = None
+    analysis_depth: str = "standard"
+
+
+class AsyncJobResponse(BaseModel):
+    """Response from starting async coverage analysis."""
+    job_id: str
+    report_id: str
+    status: str
+    message: str
+
+
+class JobStatusResponse(BaseModel):
+    """Response with job status and progress."""
+    job_id: str
+    report_id: Optional[str]
+    status: str
+    progress: int  # 0-100
+    error_message: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+    completed_at: Optional[datetime] = None
 
 
 class Subscores(BaseModel):
@@ -114,14 +144,14 @@ async def generate_coverage(
     db: AsyncSession = Depends(get_db)
 ):
     """Start coverage analysis for a script.
-    
+
     This creates a report record with status 'processing' and queues the analysis
     to run in the background. Poll the GET endpoint to check for completion.
-    
+
     ## Scoring System
     - 5 categories × /10 = /50 total
     - **Pass** (0-24): Not ready for consideration
-    - **Consider** (25-37): Shows promise with reservations  
+    - **Consider** (25-37): Shows promise with reservations
     - **Recommend** (38-50): Strong contender, pursue immediately
     """
     # Verify script exists
@@ -129,10 +159,10 @@ async def generate_coverage(
         select(ScriptMetadata).where(ScriptMetadata.id == request.script_id)
     )
     script = result.scalar_one_or_none()
-    
+
     if not script:
         raise HTTPException(status_code=404, detail="Script not found")
-    
+
     # Create report record
     report_id = str(uuid.uuid4())
     report = CoverageReport(
@@ -145,14 +175,14 @@ async def generate_coverage(
         subscores={},
         model_used="kimi-k2.5"  # Default to Kimi
     )
-    
+
     db.add(report)
     await db.commit()
-    
+
     # Queue background analysis
     # TODO: Implement with Celery or similar
     # For now, analysis is run synchronously via the test endpoint
-    
+
     return CoverageListResponse(
         report_id=report_id,
         script_id=request.script_id,
@@ -161,6 +191,100 @@ async def generate_coverage(
         total_score=None,
         recommendation=None,
         created_at=report.created_at
+    )
+
+
+@router.post("/generate-async", response_model=AsyncJobResponse)
+async def generate_coverage_async(
+    request: AsyncCoverageRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """Start async coverage analysis.
+
+    Creates a job and immediately returns a job_id. The analysis runs in the
+    background. Poll /jobs/{job_id}/status to track progress.
+
+    ## Scoring System
+    - 5 categories × /10 = /50 total
+    - **Pass** (0-24): Not ready for consideration
+    - **Consider** (25-37): Shows promise with reservations
+    - **Recommend** (38-50): Strong contender, pursue immediately
+    """
+    # Verify script exists
+    result = await db.execute(
+        select(ScriptMetadata).where(ScriptMetadata.id == request.script_id)
+    )
+    script = result.scalar_one_or_none()
+
+    if not script:
+        raise HTTPException(status_code=404, detail="Script not found")
+
+    # Create report record
+    report_id = str(uuid.uuid4())
+    report = CoverageReport(
+        id=report_id,
+        script_id=request.script_id,
+        genre=request.genre,
+        comps=request.comps or [],
+        analysis_depth=request.analysis_depth,
+        status=ReportStatus.PROCESSING,
+        subscores={},
+        model_used="kimi-k2.5"
+    )
+
+    db.add(report)
+    await db.commit()
+
+    # Create analysis job
+    job = await JobManager.create_job(
+        script_id=request.script_id,
+        script_text=request.script_text,
+        report_id=report_id,
+        db=db,
+        genre=request.genre,
+        comps=request.comps,
+        analysis_depth=request.analysis_depth
+    )
+
+    # Start background analysis
+    JobManager.start_background_task(
+        job_id=job.id,
+        script_text=request.script_text,
+        report_id=report_id
+    )
+
+    return AsyncJobResponse(
+        job_id=job.id,
+        report_id=report_id,
+        status=JobStatus.QUEUED.value,
+        message="Analysis started. Poll /jobs/{job_id}/status for progress."
+    )
+
+
+@router.get("/jobs/{job_id}/status", response_model=JobStatusResponse)
+async def get_job_status(
+    job_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """Get the status of an async analysis job.
+
+    Returns current status, progress percentage (0-100), and error message if failed.
+    When status is 'completed', the report can be fetched via GET /{report_id}.
+    """
+    job = await JobManager.get_job(job_id, db)
+
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    return JobStatusResponse(
+        job_id=job.id,
+        report_id=job.report_id,
+        status=job.status.value,
+        progress=job.progress,
+        error_message=job.error_message,
+        created_at=job.created_at,
+        updated_at=job.updated_at,
+        completed_at=job.completed_at
     )
 
 

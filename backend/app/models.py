@@ -27,6 +27,14 @@ class ReportStatus(str, Enum):
     FAILED = "failed"
 
 
+class JobStatus(str, Enum):
+    """Status of async analysis job."""
+    QUEUED = "queued"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
 class Recommendation(str, Enum):
     """Overall recommendation based on total score."""
     PASS = "Pass"           # 0-24: Not ready for consideration
@@ -150,3 +158,53 @@ class CoverageReport(Base):
     
     def __repr__(self) -> str:
         return f"<CoverageReport(id={self.id}, script_id={self.script_id}, status={self.status})>"
+
+
+class AnalysisJob(Base):
+    """Async job queue for coverage analysis.
+    
+    Tracks the status of long-running analysis jobs to enable
+    non-blocking coverage generation with progress updates.
+    """
+    __tablename__ = "analysis_jobs"
+    
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    script_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("script_metadata.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+    report_id: Mapped[Optional[str]] = mapped_column(
+        String(36),
+        ForeignKey("coverage_reports.id", ondelete="SET NULL"),
+        nullable=True
+    )
+    
+    # Job status and progress
+    status: Mapped[JobStatus] = mapped_column(
+        SQLEnum(JobStatus),
+        default=JobStatus.QUEUED
+    )
+    progress: Mapped[int] = mapped_column(Integer, default=0)  # 0-100
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    
+    # Analysis configuration (stored for retry capability)
+    genre: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    comps: Mapped[Optional[List[str]]] = mapped_column(JSON, nullable=True)
+    analysis_depth: Mapped[str] = mapped_column(String(20), default="standard")
+    
+    # Script text hash for verification (NOT the actual text)
+    script_text_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow
+    )
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    
+    def __repr__(self) -> str:
+        return f"<AnalysisJob(id={self.id}, script_id={self.script_id}, status={self.status.value}, progress={self.progress})>"

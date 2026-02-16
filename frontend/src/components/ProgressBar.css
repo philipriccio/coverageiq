@@ -1,0 +1,135 @@
+.progress-container {
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  border-radius: 12px;
+  padding: 24px;
+  margin: 20px 0;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.progress-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.progress-icon {
+  font-size: 24px;
+  margin-right: 12px;
+}
+
+.progress-status {
+  flex: 1;
+  font-size: 16px;
+  font-weight: 500;
+  color: #e0e0e0;
+}
+
+.progress-percentage {
+  font-size: 20px;
+  font-weight: 700;
+  color: #4fc3f7;
+  min-width: 50px;
+  text-align: right;
+}
+
+.progress-bar-wrapper {
+  width: 100%;
+  height: 12px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  overflow: hidden;
+  position: relative;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  border-radius: 6px;
+  transition: width 0.5s ease, background-color 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.progress-bar-fill::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.3),
+    transparent
+  );
+  animation: shimmer 2s infinite;
+}
+
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.progress-bar-fill.queued {
+  background: linear-gradient(90deg, #ffd700, #ffaa00);
+}
+
+.progress-bar-fill.processing {
+  background: linear-gradient(90deg, #4fc3f7, #29b6f6);
+}
+
+.progress-bar-fill.completed {
+  background: linear-gradient(90deg, #66bb6a, #4caf50);
+}
+
+.progress-bar-fill.failed {
+  background: linear-gradient(90deg, #ef5350, #e53935);
+}
+
+.cancel-btn {
+  margin-top: 16px;
+  padding: 10px 20px;
+  background: rgba(239, 83, 80, 0.2);
+  border: 1px solid rgba(239, 83, 80, 0.5);
+  color: #ef5350;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s ease;
+}
+
+.cancel-btn:hover {
+  background: rgba(239, 83, 80, 0.3);
+  border-color: #ef5350;
+}
+
+/* Loading state overlay */
+.analyzing-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(4px);
+}
+
+.analyzing-content {
+  width: 90%;
+  max-width: 500px;
+}
+
+.analyzing-content .progress-container {
+  background: linear-gradient(135deg, #0d1b2a 0%, #1b263b 100%);
+  border: 1px solid rgba(79, 195, 247, 0.3);
+}
