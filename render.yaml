@@ -15,6 +15,8 @@ services:
         value: sqlite:///./coverageiq.db
       - key: MOONSHOT_API_KEY
         sync: false  # Set this manually in Render dashboard
+      - key: ANTHROPIC_API_KEY
+        sync: false  # Set this manually in Render dashboard (Claude fallback)
       - key: CORS_ORIGINS
         value: "https://coverageiq-frontend.pages.dev,http://localhost:5173"
     autoDeploy: true
