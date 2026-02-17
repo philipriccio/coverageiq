@@ -20,3 +20,4 @@ build/
 .vscode/
 *.log
 backend/google-drive-credentials.json
+dev-session-*.jsonl
