@@ -90,6 +90,7 @@ class CoverageReport(Base):
     structure_analysis: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     market_positioning: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     evidence_quotes: Mapped[List[dict]] = mapped_column(JSON, default=list)
+    mandate_checklist: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
 
     model_used: Mapped[str] = mapped_column(String(50), default="gpt-4.1")
 

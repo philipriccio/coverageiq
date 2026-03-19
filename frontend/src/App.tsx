@@ -14,6 +14,11 @@ interface EvidenceQuote {
   context?: string
 }
 
+interface MandateChecklistItem {
+  result: boolean
+  rationale: string
+}
+
 interface CoverageReport {
   report_id: string
   script_id: string
@@ -25,6 +30,7 @@ interface CoverageReport {
   created_at: string
   completed_at?: string
   subscores?: Record<string, { score?: number } | number>
+  mandate_checklist?: Record<string, MandateChecklistItem>
   total_score?: number
   recommendation?: Recommendation
   logline?: string
@@ -109,6 +115,16 @@ function ReportViewer({ report, onBack, onExportPDF, onExportGoogleDoc, onFlagEx
   flagging: boolean
 }) {
   const subscoreEntries = Object.entries(report.subscores || {}).map(([key, value]) => ({ key, score: typeof value === 'number' ? value : value.score || 0 }))
+  const mandateChecklistEntries = [
+    { key: 'canadian_content', label: 'Canadian Content' },
+    { key: 'star_role', label: 'Star Role' },
+    { key: 'intl_copro', label: "Int'l Co-Pro Friendly" },
+    { key: 'budget_feasible', label: 'Budget Feasible' },
+  ].map(({ key, label }) => ({
+    key,
+    label,
+    item: report.mandate_checklist?.[key],
+  })).filter(({ item }) => item) as Array<{ key: string; label: string; item: MandateChecklistItem }>
   const renderParagraphs = (value?: string) => value?.split('\n').filter(Boolean).map((line, i) => <p key={i}>{line}</p>)
 
   return (
@@ -140,6 +156,24 @@ function ReportViewer({ report, onBack, onExportPDF, onExportGoogleDoc, onFlagEx
             ))}
           </div>
         </CollapsibleSection>
+
+        {mandateChecklistEntries.length > 0 && (
+          <CollapsibleSection title="Mandate Checklist" defaultOpen>
+            <div className="mandate-checklist">
+              {mandateChecklistEntries.map(({ key, label, item }) => (
+                <div className={`mandate-checklist-item ${item.result ? 'is-passing' : 'is-failing'}`} key={key}>
+                  <div className="mandate-checklist-header">
+                    <span className={`mandate-checklist-icon ${item.result ? 'is-passing' : 'is-failing'}`}>{item.result ? '✓' : '✗'}</span>
+                    <div>
+                      <div className="mandate-checklist-label">{label}</div>
+                      {item.rationale && <p className="mandate-checklist-rationale">{item.rationale}</p>}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CollapsibleSection>
+        )}
 
         {report.logline && <CollapsibleSection title="Logline" defaultOpen><p className="logline">{report.logline}</p></CollapsibleSection>}
         {report.synopsis && <CollapsibleSection title="Synopsis">{renderParagraphs(report.synopsis)}</CollapsibleSection>}

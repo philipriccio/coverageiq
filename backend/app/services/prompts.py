@@ -20,6 +20,13 @@ EVIDENCE REQUIREMENTS:
 - Quotes should be 1-2 lines maximum
 - Always include page references (p.XX format)
 - Format: \"Quote\" (p.XX) - brief context
+
+MANDATE CHECKLIST:
+- Evaluate each criterion for the Hawco Productions mandate:
+- canadian_content: Is the story, setting, or characters Canadian or adaptable to Canadian co-production?
+- star_role: Does it have a compelling lead role that would attract A-list Canadian or international talent?
+- intl_copro: Is the format, story, or scope suitable for international co-production financing?
+- budget_feasible: Is the production scope realistic for a Canadian mid-range budget (e.g., $2-5M/episode)?
 """
 
 TV_PILOT_COVERAGE_PROMPT = """Analyze the following TV pilot script and provide comprehensive coverage. Focus heavily on series sustainability and the series engine.
@@ -79,6 +86,12 @@ OUTPUT FORMAT - Return valid JSON with this exact structure:
         "dialogue": {"score": 0, "rationale": "Rationale"},
         "market": {"score": 0, "rationale": "Rationale"}
     },
+    "mandate_checklist": {
+        "canadian_content": {"result": true, "rationale": "Brief rationale"},
+        "star_role": {"result": true, "rationale": "Brief rationale"},
+        "intl_copro": {"result": true, "rationale": "Brief rationale"},
+        "budget_feasible": {"result": true, "rationale": "Brief rationale"}
+    },
     "total_score": 0,
     "recommendation": "Pass/Consider/Recommend",
     "recommendation_rationale": "Why this recommendation?",
@@ -101,14 +114,14 @@ RECOMMENDATION THRESHOLDS:
 QUICK_TV_PILOT_PROMPT = """Provide a quick analysis of this TV pilot script. Focus on the essentials: does the pilot work and does it have series potential?
 
 Return valid JSON with these keys:
-logline, synopsis, overall_comments, strengths, weaknesses, character_analysis, structure_analysis, market_positioning, subscores, total_score, recommendation, evidence_quotes.
+logline, synopsis, overall_comments, strengths, weaknesses, character_analysis, structure_analysis, market_positioning, subscores, mandate_checklist, total_score, recommendation, evidence_quotes.
 
 Keep it concise but still return the full schema. Use shorter values where needed.
 """
 
 DEEP_TV_PILOT_PROMPT = """Provide comprehensive deep-dive coverage of this TV pilot script. Be thorough, development-focused, and highly specific.
 
-Return the same JSON schema as standard coverage, but with richer detail in every section.
+Return the same JSON schema as standard coverage, including mandate_checklist, but with richer detail in every section.
 """
 
 GENRE_CONTEXTS = {

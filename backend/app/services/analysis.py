@@ -163,6 +163,16 @@ class AnalysisPipeline:
                 for q in raw_result.get("evidence_quotes", [])
                 if isinstance(q, dict)
             ]
+
+            mandate_checklist = raw_result.get("mandate_checklist", {})
+            checklist_keys = ["canadian_content", "star_role", "intl_copro", "budget_feasible"]
+            raw_result["mandate_checklist"] = {
+                key: {
+                    "result": bool(mandate_checklist.get(key, {}).get("result", False)),
+                    "rationale": str(mandate_checklist.get(key, {}).get("rationale", ""))[:300],
+                }
+                for key in checklist_keys
+            }
             return raw_result
         except Exception as exc:
             raise AnalysisError(f"Failed to parse analysis result: {exc}") from exc
@@ -188,6 +198,7 @@ class AnalysisPipeline:
             rec = results.get("recommendation", "Pass")
             report.recommendation = Recommendation.RECOMMEND if rec == "Recommend" else Recommendation.CONSIDER if rec == "Consider" else Recommendation.PASS
             report.evidence_quotes = results.get("evidence_quotes", [])
+            report.mandate_checklist = results.get("mandate_checklist", {})
             report.model_used = model_used
             await db.commit()
             await db.refresh(report)

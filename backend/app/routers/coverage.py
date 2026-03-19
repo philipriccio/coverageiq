@@ -61,6 +61,7 @@ class CoverageReportResponse(BaseModel):
     created_at: datetime
     completed_at: Optional[datetime]
     subscores: Optional[dict]
+    mandate_checklist: Optional[dict]
     total_score: Optional[int]
     recommendation: Optional[str]
     logline: Optional[str]
@@ -169,6 +170,7 @@ async def _format_report_response(report: CoverageReport, script: Optional[Scrip
         created_at=report.created_at,
         completed_at=report.completed_at,
         subscores=report.subscores,
+        mandate_checklist=report.mandate_checklist,
         total_score=report.total_score,
         recommendation=report.recommendation.value if report.recommendation else None,
         logline=report.logline,
@@ -311,6 +313,7 @@ async def export_to_google_doc(report_id: str, request: ExportRequest, db: Async
         "total_score": report.total_score,
         "recommendation": report.recommendation.value if report.recommendation else "N/A",
         "subscores": report.subscores,
+        "mandate_checklist": report.mandate_checklist,
         "logline": report.logline,
         "synopsis": report.synopsis,
         "overall_comments": report.overall_comments,
@@ -343,6 +346,7 @@ async def export_to_pdf(report_id: str, db: AsyncSession = Depends(get_db)):
         "total_score": report.total_score,
         "recommendation": report.recommendation.value if report.recommendation else "N/A",
         "subscores": report.subscores,
+        "mandate_checklist": report.mandate_checklist,
         "logline": report.logline,
         "synopsis": report.synopsis,
         "overall_comments": report.overall_comments,
