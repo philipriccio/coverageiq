@@ -3,42 +3,30 @@ import uuid
 from datetime import datetime
 from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks, Response
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 
 from app.database import get_db
-from app.models import CoverageReport, ScriptMetadata, ReportStatus, Recommendation, AnalysisJob, JobStatus
-from app.services.analysis import run_coverage_analysis, AnalysisError
+from app.models import AnalysisJob, CoverageExample, CoverageReport, DomainKnowledge, JobStatus, Recommendation, ReportStatus, ScriptMetadata
+from app.services.analysis import AnalysisError, run_coverage_analysis
+from app.services.google_docs_export import GoogleDocsExportError, get_google_docs_exporter
 from app.services.job_manager import JobManager
-from app.services.google_docs_export import (
-    get_google_docs_exporter, GoogleDocsExportError
-)
-from app.services.pdf_export import get_pdf_exporter, PDFExportError
+from app.services.pdf_export import PDFExportError, get_pdf_exporter
 
 router = APIRouter(prefix="/api/coverage", tags=["coverage"])
 
 
-class CoverageRequest(BaseModel):
-    """Request to start coverage analysis."""
-    script_id: str
-    genre: Optional[str] = None
-    comps: Optional[List[str]] = None  # Comparable films
-    analysis_depth: str = "standard"  # quick, standard, deep
-
-
 class AsyncCoverageRequest(BaseModel):
-    """Request to start async coverage analysis."""
     script_id: str
-    script_text: str  # Script content for processing
+    script_text: str
     genre: Optional[str] = None
     comps: Optional[List[str]] = None
     analysis_depth: str = "standard"
 
 
 class AsyncJobResponse(BaseModel):
-    """Response from starting async coverage analysis."""
     job_id: str
     report_id: str
     status: str
@@ -46,55 +34,35 @@ class AsyncJobResponse(BaseModel):
 
 
 class JobStatusResponse(BaseModel):
-    """Response with job status and progress."""
     job_id: str
     report_id: Optional[str]
     status: str
-    progress: int  # 0-100
+    progress: int
     error_message: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     completed_at: Optional[datetime] = None
 
 
-class Subscores(BaseModel):
-    """Five category subscores (/10 each = /50 total)."""
-    concept: int  # Concept & Premise
-    structure: int  # Structure & Pacing
-    character: int  # Character & Dialogue
-    market: int  # Market Viability
-    writing: int  # Writing Quality & Voice
-
-
 class EvidenceQuote(BaseModel):
-    """A short evidence quote from the script."""
-    quote: str  # 1-2 lines max
+    quote: str
     page: int
     context: Optional[str] = None
 
 
 class CoverageReportResponse(BaseModel):
-    """Full coverage report response."""
     report_id: str
     script_id: str
     script_title: Optional[str]
-    
-    # Analysis configuration
     genre: Optional[str]
     comps: Optional[List[str]]
     analysis_depth: str
-    
-    # Status
     status: str
     created_at: datetime
     completed_at: Optional[datetime]
-    
-    # Scores
     subscores: Optional[dict]
-    total_score: Optional[int]  # /50
-    recommendation: Optional[str]  # Pass, Consider, Recommend
-    
-    # Report content
+    total_score: Optional[int]
+    recommendation: Optional[str]
     logline: Optional[str]
     synopsis: Optional[str]
     overall_comments: Optional[str]
@@ -104,122 +72,44 @@ class CoverageReportResponse(BaseModel):
     structure_analysis: Optional[str]
     market_positioning: Optional[str]
     evidence_quotes: List[EvidenceQuote]
-    
+    model_used: str
+    is_flagged_example: bool = False
+
+
+class CoverageHistoryItem(BaseModel):
+    id: str
+    title: Optional[str]
+    genre: Optional[str]
+    analysis_depth: str
+    recommendation: Optional[str]
+    total_score: Optional[int]
+    created_at: datetime
     model_used: str
 
 
-class CoverageListResponse(BaseModel):
-    """Simplified report for list views."""
-    report_id: str
-    script_id: str
-    script_title: Optional[str]
-    status: str
-    total_score: Optional[int]
-    recommendation: Optional[str]
-    created_at: datetime
+class DomainKnowledgeRequest(BaseModel):
+    category: str
+    content: str
 
 
-async def _get_script_text(script_id: str) -> str:
-    """Retrieve script text for analysis.
-    
-    In the actual implementation, this would retrieve from a temporary
-    storage or cache. For now, we assume the text is passed through or
-    retrieved from the upload session.
-    
-    Args:
-        script_id: Script UUID
-        
-    Returns:
-        Script text content
-    """
-    # TODO: Implement script text retrieval from memory/cache
-    # For testing, this will be handled by the test endpoint
-    raise NotImplementedError("Script text retrieval not implemented")
+class ExportRequest(BaseModel):
+    email: Optional[str] = None
 
 
-@router.post("/generate", response_model=CoverageListResponse)
-async def generate_coverage(
-    request: CoverageRequest,
-    background_tasks: BackgroundTasks,
-    db: AsyncSession = Depends(get_db)
-):
-    """Start coverage analysis for a script.
-
-    This creates a report record with status 'processing' and queues the analysis
-    to run in the background. Poll the GET endpoint to check for completion.
-
-    ## Scoring System
-    - 5 categories × /10 = /50 total
-    - **Pass** (0-24): Not ready for consideration
-    - **Consider** (25-37): Shows promise with reservations
-    - **Recommend** (38-50): Strong contender, pursue immediately
-    """
-    # Verify script exists
-    result = await db.execute(
-        select(ScriptMetadata).where(ScriptMetadata.id == request.script_id)
-    )
-    script = result.scalar_one_or_none()
-
-    if not script:
-        raise HTTPException(status_code=404, detail="Script not found")
-
-    # Create report record
-    report_id = str(uuid.uuid4())
-    report = CoverageReport(
-        id=report_id,
-        script_id=request.script_id,
-        genre=request.genre,
-        comps=request.comps or [],
-        analysis_depth=request.analysis_depth,
-        status=ReportStatus.PROCESSING,
-        subscores={},
-        model_used="kimi-k2.5"  # Default to Kimi
-    )
-
-    db.add(report)
-    await db.commit()
-
-    # Queue background analysis
-    # TODO: Implement with Celery or similar
-    # For now, analysis is run synchronously via the test endpoint
-
-    return CoverageListResponse(
-        report_id=report_id,
-        script_id=request.script_id,
-        script_title=script.title,
-        status=report.status.value,
-        total_score=None,
-        recommendation=None,
-        created_at=report.created_at
-    )
+class ExportResponse(BaseModel):
+    export_type: str
+    url: Optional[str] = None
+    filename: Optional[str] = None
+    message: str
 
 
 @router.post("/generate-async", response_model=AsyncJobResponse)
-async def generate_coverage_async(
-    request: AsyncCoverageRequest,
-    db: AsyncSession = Depends(get_db)
-):
-    """Start async coverage analysis.
-
-    Creates a job and immediately returns a job_id. The analysis runs in the
-    background. Poll /jobs/{job_id}/status to track progress.
-
-    ## Scoring System
-    - 5 categories × /10 = /50 total
-    - **Pass** (0-24): Not ready for consideration
-    - **Consider** (25-37): Shows promise with reservations
-    - **Recommend** (38-50): Strong contender, pursue immediately
-    """
-    # Verify script exists
-    result = await db.execute(
-        select(ScriptMetadata).where(ScriptMetadata.id == request.script_id)
-    )
+async def generate_coverage_async(request: AsyncCoverageRequest, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(ScriptMetadata).where(ScriptMetadata.id == request.script_id))
     script = result.scalar_one_or_none()
-
     if not script:
         raise HTTPException(status_code=404, detail="Script not found")
 
-    # Create report record
     report_id = str(uuid.uuid4())
     report = CoverageReport(
         id=report_id,
@@ -229,13 +119,11 @@ async def generate_coverage_async(
         analysis_depth=request.analysis_depth,
         status=ReportStatus.PROCESSING,
         subscores={},
-        model_used="kimi-k2.5"
+        model_used="gpt-4.1",
     )
-
     db.add(report)
     await db.commit()
 
-    # Create analysis job
     job = await JobManager.create_job(
         script_id=request.script_id,
         script_text=request.script_text,
@@ -243,39 +131,17 @@ async def generate_coverage_async(
         db=db,
         genre=request.genre,
         comps=request.comps,
-        analysis_depth=request.analysis_depth
+        analysis_depth=request.analysis_depth,
     )
-
-    # Start background analysis
-    JobManager.start_background_task(
-        job_id=job.id,
-        script_text=request.script_text,
-        report_id=report_id
-    )
-
-    return AsyncJobResponse(
-        job_id=job.id,
-        report_id=report_id,
-        status=JobStatus.QUEUED.value,
-        message="Analysis started. Poll /jobs/{job_id}/status for progress."
-    )
+    JobManager.start_background_task(job_id=job.id, script_text=request.script_text, report_id=report_id)
+    return AsyncJobResponse(job_id=job.id, report_id=report_id, status=JobStatus.QUEUED.value, message="Analysis started")
 
 
 @router.get("/jobs/{job_id}/status", response_model=JobStatusResponse)
-async def get_job_status(
-    job_id: str,
-    db: AsyncSession = Depends(get_db)
-):
-    """Get the status of an async analysis job.
-
-    Returns current status, progress percentage (0-100), and error message if failed.
-    When status is 'completed', the report can be fetched via GET /{report_id}.
-    """
+async def get_job_status(job_id: str, db: AsyncSession = Depends(get_db)):
     job = await JobManager.get_job(job_id, db)
-
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-
     return JobStatusResponse(
         job_id=job.id,
         report_id=job.report_id,
@@ -284,134 +150,14 @@ async def get_job_status(
         error_message=job.error_message,
         created_at=job.created_at,
         updated_at=job.updated_at,
-        completed_at=job.completed_at
+        completed_at=job.completed_at,
     )
 
 
-class SyncCoverageRequest(BaseModel):
-    """Request for synchronous coverage generation."""
-    script_id: str
-    script_text: str  # Script content for processing
-    genre: Optional[str] = None
-    comps: Optional[List[str]] = None
-    analysis_depth: str = "standard"
-
-
-@router.post("/generate-sync", response_model=CoverageReportResponse)
-async def generate_coverage_sync(
-    request: SyncCoverageRequest,
-    db: AsyncSession = Depends(get_db)
-):
-    """Generate coverage analysis synchronously (for testing).
-    
-    This endpoint runs analysis immediately and returns the full results.
-    For production, use the async /generate endpoint.
-    
-    ## Scoring System
-    - 5 categories × /10 = /50 total
-    - **Pass** (0-24): Not ready for consideration
-    - **Consider** (25-37): Shows promise with reservations  
-    - **Recommend** (38-50): Strong contender, pursue immediately
-    """
-    # Verify script exists
-    result = await db.execute(
-        select(ScriptMetadata).where(ScriptMetadata.id == request.script_id)
-    )
-    script = result.scalar_one_or_none()
-    
-    if not script:
-        raise HTTPException(status_code=404, detail="Script not found")
-    
-    # Create report record
-    report_id = str(uuid.uuid4())
-    report = CoverageReport(
-        id=report_id,
-        script_id=request.script_id,
-        genre=request.genre,
-        comps=request.comps or [],
-        analysis_depth=request.analysis_depth,
-        status=ReportStatus.PROCESSING,
-        subscores={},
-        model_used="kimi-k2.5"
-    )
-    
-    db.add(report)
-    await db.commit()
-    
-    try:
-        # Run analysis synchronously
-        report = await run_coverage_analysis(
-            script_text=request.script_text,
-            report_id=report_id,
-            script_id=request.script_id,
-            db=db,
-            genre=request.genre,
-            comps=request.comps,
-            analysis_depth=request.analysis_depth
-        )
-        
-        # Return full response
-        return await _format_report_response(report, script, db)
-        
-    except AnalysisError as e:
-        raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
-
-
-@router.get("/{report_id}", response_model=CoverageReportResponse)
-async def get_coverage(
-    report_id: str,
-    db: AsyncSession = Depends(get_db)
-):
-    """Get a coverage report by ID.
-    
-    If status is 'processing', the content fields will be null.
-    Once completed, all fields are populated.
-    """
-    result = await db.execute(
-        select(CoverageReport).where(CoverageReport.id == report_id)
-    )
-    report = result.scalar_one_or_none()
-    
-    if not report:
-        raise HTTPException(status_code=404, detail="Report not found")
-    
-    # Get script
-    script_result = await db.execute(
-        select(ScriptMetadata).where(ScriptMetadata.id == report.script_id)
-    )
-    script = script_result.scalar_one_or_none()
-    
-    return await _format_report_response(report, script, db)
-
-
-async def _format_report_response(
-    report: CoverageReport,
-    script: Optional[ScriptMetadata],
-    db: AsyncSession
-) -> CoverageReportResponse:
-    """Format a CoverageReport for API response.
-    
-    Args:
-        report: CoverageReport object
-        script: ScriptMetadata object (can be None)
-        db: Database session
-        
-    Returns:
-        Formatted CoverageReportResponse
-    """
-    # Format evidence quotes
-    quotes_data = report.evidence_quotes or []
-    evidence_quotes = [
-        EvidenceQuote(
-            quote=q.get("quote", ""),
-            page=q.get("page", 0),
-            context=q.get("context")
-        )
-        for q in quotes_data
-    ]
-    
+async def _format_report_response(report: CoverageReport, script: Optional[ScriptMetadata], db: AsyncSession) -> CoverageReportResponse:
+    quotes = [EvidenceQuote(quote=q.get("quote", ""), page=q.get("page", 0), context=q.get("context")) for q in (report.evidence_quotes or [])]
+    example_result = await db.execute(select(CoverageExample).where(CoverageExample.coverage_report_id == report.id))
+    example = example_result.scalar_one_or_none()
     return CoverageReportResponse(
         report_id=report.id,
         script_id=report.script_id,
@@ -433,310 +179,219 @@ async def _format_report_response(
         character_notes=report.character_notes,
         structure_analysis=report.structure_analysis,
         market_positioning=report.market_positioning,
-        evidence_quotes=evidence_quotes,
-        model_used=report.model_used
+        evidence_quotes=quotes,
+        model_used=report.model_used,
+        is_flagged_example=example is not None and example.is_featured,
     )
 
 
-@router.get("/")
-async def list_coverage_reports(
-    db: AsyncSession = Depends(get_db),
-    skip: int = 0,
-    limit: int = 50
-):
-    """List all coverage reports for the current user."""
-    # TODO: Filter by actual user_id once auth is implemented
-    user_id = "default_user"
-    
-    # Join with ScriptMetadata to filter by user
+@router.get("/history")
+async def get_coverage_history(db: AsyncSession = Depends(get_db), skip: int = 0, limit: int = 20):
     result = await db.execute(
         select(CoverageReport, ScriptMetadata)
         .join(ScriptMetadata, CoverageReport.script_id == ScriptMetadata.id)
-        .where(ScriptMetadata.user_id == user_id)
+        .where(ScriptMetadata.user_id == "default_user")
         .order_by(CoverageReport.created_at.desc())
         .offset(skip)
         .limit(limit)
     )
-    
-    reports = []
-    for report, script in result.all():
-        reports.append(CoverageListResponse(
-            report_id=report.id,
-            script_id=report.script_id,
-            script_title=script.title,
-            status=report.status.value,
-            total_score=report.total_score,
-            recommendation=report.recommendation.value if report.recommendation else None,
-            created_at=report.created_at
-        ))
-    
-    return {"reports": reports, "total": len(reports)}
-
-
-@router.delete("/{report_id}")
-async def delete_coverage(
-    report_id: str,
-    db: AsyncSession = Depends(get_db)
-):
-    """Delete a coverage report."""
-    result = await db.execute(
-        select(CoverageReport).where(CoverageReport.id == report_id)
+    rows = result.all()
+    count_result = await db.execute(
+        select(func.count(CoverageReport.id))
+        .join(ScriptMetadata, CoverageReport.script_id == ScriptMetadata.id)
+        .where(ScriptMetadata.user_id == "default_user")
     )
+    total = count_result.scalar() or 0
+    items = [
+        CoverageHistoryItem(
+            id=report.id,
+            title=script.title,
+            genre=report.genre,
+            analysis_depth=report.analysis_depth,
+            recommendation=report.recommendation.value if report.recommendation else None,
+            total_score=report.total_score,
+            created_at=report.created_at,
+            model_used=report.model_used,
+        ).model_dump()
+        for report, script in rows
+    ]
+    return {"items": items, "total": total, "skip": skip, "limit": limit}
+
+
+@router.get("/{report_id}", response_model=CoverageReportResponse)
+async def get_coverage(report_id: str, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(CoverageReport).where(CoverageReport.id == report_id))
     report = result.scalar_one_or_none()
-    
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
-    
-    await db.delete(report)
+    script_result = await db.execute(select(ScriptMetadata).where(ScriptMetadata.id == report.script_id))
+    script = script_result.scalar_one_or_none()
+    return await _format_report_response(report, script, db)
+
+
+@router.post("/{report_id}/flag-example")
+async def flag_report_as_example(report_id: str, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(CoverageReport).where(CoverageReport.id == report_id))
+    report = result.scalar_one_or_none()
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    if report.status != ReportStatus.COMPLETED:
+        raise HTTPException(status_code=400, detail="Only completed reports can be starred")
+
+    script_result = await db.execute(select(ScriptMetadata).where(ScriptMetadata.id == report.script_id))
+    script = script_result.scalar_one_or_none()
+    example_result = await db.execute(select(CoverageExample).where(CoverageExample.coverage_report_id == report.id))
+    example = example_result.scalar_one_or_none()
+    if example:
+        example.is_featured = True
+    else:
+        example = CoverageExample(
+            id=str(uuid.uuid4()),
+            script_title=script.title if script and script.title else "Untitled Script",
+            genre=report.genre,
+            analysis_depth=report.analysis_depth,
+            coverage_report_id=report.id,
+            is_featured=True,
+        )
+        db.add(example)
     await db.commit()
-    
-    return {"message": "Coverage report deleted successfully"}
+    return {"message": "Report flagged as example", "example_id": example.id}
 
 
-class ExportRequest(BaseModel):
-    """Request to export a coverage report."""
-    email: Optional[str] = None  # Email to share Google Doc with
+@router.get("/admin/knowledge")
+async def list_domain_knowledge(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(DomainKnowledge).order_by(DomainKnowledge.category.asc(), DomainKnowledge.updated_at.desc()))
+    entries = result.scalars().all()
+    return {
+        "entries": [
+            {
+                "id": entry.id,
+                "category": entry.category,
+                "content": entry.content,
+                "created_at": entry.created_at,
+                "updated_at": entry.updated_at,
+            }
+            for entry in entries
+        ]
+    }
 
 
-class ExportResponse(BaseModel):
-    """Response from export operation."""
-    export_type: str  # 'google_doc' or 'pdf'
-    url: Optional[str] = None  # URL to exported document
-    filename: Optional[str] = None  # Filename for PDF download
-    message: str
+@router.post("/admin/knowledge")
+async def create_domain_knowledge(request: DomainKnowledgeRequest, db: AsyncSession = Depends(get_db)):
+    entry = DomainKnowledge(id=str(uuid.uuid4()), category=request.category.strip().lower(), content=request.content.strip())
+    db.add(entry)
+    await db.commit()
+    await db.refresh(entry)
+    return {"id": entry.id, "message": "Knowledge entry created"}
+
+
+@router.delete("/admin/knowledge/{entry_id}")
+async def delete_domain_knowledge(entry_id: str, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(DomainKnowledge).where(DomainKnowledge.id == entry_id))
+    entry = result.scalar_one_or_none()
+    if not entry:
+        raise HTTPException(status_code=404, detail="Knowledge entry not found")
+    await db.delete(entry)
+    await db.commit()
+    return {"message": "Knowledge entry deleted"}
 
 
 @router.post("/{report_id}/export/google-doc", response_model=ExportResponse)
-async def export_to_google_doc(
-    report_id: str,
-    request: ExportRequest,
-    db: AsyncSession = Depends(get_db)
-):
-    """Export a coverage report to Google Docs.
-    
-    Creates a formatted Google Doc with the coverage report content
-    and optionally shares it with the specified email address.
-    
-    The document includes:
-    - Formatted headers and sections
-    - Scores and recommendation badge
-    - All coverage components (logline, synopsis, etc.)
-    - Evidence quotes
-    """
-    # Get report
-    result = await db.execute(
-        select(CoverageReport).where(CoverageReport.id == report_id)
-    )
+async def export_to_google_doc(report_id: str, request: ExportRequest, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(CoverageReport).where(CoverageReport.id == report_id))
     report = result.scalar_one_or_none()
-    
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
-    
     if report.status != ReportStatus.COMPLETED:
-        raise HTTPException(
-            status_code=400, 
-            detail="Report is not completed yet"
-        )
-    
-    # Get script info
-    script_result = await db.execute(
-        select(ScriptMetadata).where(ScriptMetadata.id == report.script_id)
-    )
+        raise HTTPException(status_code=400, detail="Report is not completed yet")
+    script_result = await db.execute(select(ScriptMetadata).where(ScriptMetadata.id == report.script_id))
     script = script_result.scalar_one_or_none()
-    
+    report_data = {
+        "script_title": script.title if script else "Untitled Script",
+        "total_score": report.total_score,
+        "recommendation": report.recommendation.value if report.recommendation else "N/A",
+        "subscores": report.subscores,
+        "logline": report.logline,
+        "synopsis": report.synopsis,
+        "overall_comments": report.overall_comments,
+        "strengths": report.strengths,
+        "weaknesses": report.weaknesses,
+        "character_notes": report.character_notes,
+        "structure_analysis": report.structure_analysis,
+        "market_positioning": report.market_positioning,
+        "evidence_quotes": report.evidence_quotes,
+    }
     try:
-        # Prepare report data
-        report_data = {
-            'script_title': script.title if script else 'Untitled Script',
-            'total_score': report.total_score,
-            'recommendation': report.recommendation.value if report.recommendation else 'N/A',
-            'subscores': report.subscores,
-            'logline': report.logline,
-            'synopsis': report.synopsis,
-            'overall_comments': report.overall_comments,
-            'strengths': report.strengths,
-            'weaknesses': report.weaknesses,
-            'character_notes': report.character_notes,
-            'structure_analysis': report.structure_analysis,
-            'market_positioning': report.market_positioning,
-            'evidence_quotes': report.evidence_quotes
-        }
-        
-        # Default to Philip's email if not specified
-        share_email = request.email or "philipriccio@gmail.com"
-        
-        # Export to Google Docs
-        exporter = get_google_docs_exporter()
-        result = exporter.export_coverage_report(
-            report_data=report_data,
-            share_with=share_email
-        )
-        
-        return ExportResponse(
-            export_type='google_doc',
-            url=result['url'],
-            message=f"Google Doc created successfully and shared with {share_email}"
-        )
-        
-    except GoogleDocsExportError as e:
-        raise HTTPException(status_code=500, detail=f"Export failed: {str(e)}")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
+        result = get_google_docs_exporter().export_coverage_report(report_data=report_data, share_with=request.email or "philipriccio@gmail.com")
+        return ExportResponse(export_type="google_doc", url=result["url"], message="Google Doc created successfully")
+    except GoogleDocsExportError as exc:
+        raise HTTPException(status_code=500, detail=f"Export failed: {exc}") from exc
 
 
 @router.post("/{report_id}/export/pdf")
-async def export_to_pdf(
-    report_id: str,
-    db: AsyncSession = Depends(get_db)
-):
-    """Export a coverage report to PDF.
-    
-    Generates a professionally formatted PDF with:
-    - Color-coded recommendation badge
-    - Score breakdown
-    - All coverage sections
-    - Evidence quotes with styling
-    
-    Returns the PDF as a downloadable file.
-    """
-    # Get report
-    result = await db.execute(
-        select(CoverageReport).where(CoverageReport.id == report_id)
-    )
+async def export_to_pdf(report_id: str, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(CoverageReport).where(CoverageReport.id == report_id))
     report = result.scalar_one_or_none()
-    
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
-    
     if report.status != ReportStatus.COMPLETED:
-        raise HTTPException(
-            status_code=400, 
-            detail="Report is not completed yet"
-        )
-    
-    # Get script info
-    script_result = await db.execute(
-        select(ScriptMetadata).where(ScriptMetadata.id == report.script_id)
-    )
+        raise HTTPException(status_code=400, detail="Report is not completed yet")
+    script_result = await db.execute(select(ScriptMetadata).where(ScriptMetadata.id == report.script_id))
     script = script_result.scalar_one_or_none()
-    
+    report_data = {
+        "script_title": script.title if script else "Untitled Script",
+        "total_score": report.total_score,
+        "recommendation": report.recommendation.value if report.recommendation else "N/A",
+        "subscores": report.subscores,
+        "logline": report.logline,
+        "synopsis": report.synopsis,
+        "overall_comments": report.overall_comments,
+        "strengths": report.strengths,
+        "weaknesses": report.weaknesses,
+        "character_notes": report.character_notes,
+        "structure_analysis": report.structure_analysis,
+        "market_positioning": report.market_positioning,
+        "evidence_quotes": report.evidence_quotes,
+    }
     try:
-        # Prepare report data
-        report_data = {
-            'script_title': script.title if script else 'Untitled Script',
-            'total_score': report.total_score,
-            'recommendation': report.recommendation.value if report.recommendation else 'N/A',
-            'subscores': report.subscores,
-            'logline': report.logline,
-            'synopsis': report.synopsis,
-            'overall_comments': report.overall_comments,
-            'strengths': report.strengths,
-            'weaknesses': report.weaknesses,
-            'character_notes': report.character_notes,
-            'structure_analysis': report.structure_analysis,
-            'market_positioning': report.market_positioning,
-            'evidence_quotes': report.evidence_quotes
-        }
-        
-        # Generate PDF
-        exporter = get_pdf_exporter()
-        pdf_content = exporter.export_coverage_report(report_data)
-        
-        # Create filename
+        pdf_content = get_pdf_exporter().export_coverage_report(report_data)
         timestamp = datetime.now().strftime("%Y%m%d")
-        safe_title = ''.join(c if c.isalnum() else '_' for c in (script.title if script else 'Untitled'))
+        safe_title = "".join(c if c.isalnum() else "_" for c in (script.title if script else "Untitled"))
         filename = f"Coverage_Report_{safe_title}_{timestamp}.pdf"
-        
-        return Response(
-            content=pdf_content,
-            media_type="application/pdf",
-            headers={
-                "Content-Disposition": f"attachment; filename={filename}"
-            }
+        return Response(content=pdf_content, media_type="application/pdf", headers={"Content-Disposition": f"attachment; filename={filename}"})
+    except PDFExportError as exc:
+        raise HTTPException(status_code=500, detail=f"PDF export failed: {exc}") from exc
+
+
+@router.post("/generate-sync", response_model=CoverageReportResponse)
+async def generate_coverage_sync(request: AsyncCoverageRequest, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(ScriptMetadata).where(ScriptMetadata.id == request.script_id))
+    script = result.scalar_one_or_none()
+    if not script:
+        raise HTTPException(status_code=404, detail="Script not found")
+    report_id = str(uuid.uuid4())
+    report = CoverageReport(
+        id=report_id,
+        script_id=request.script_id,
+        genre=request.genre,
+        comps=request.comps or [],
+        analysis_depth=request.analysis_depth,
+        status=ReportStatus.PROCESSING,
+        subscores={},
+        model_used="gpt-4.1",
+    )
+    db.add(report)
+    await db.commit()
+    try:
+        updated = await run_coverage_analysis(
+            script_text=request.script_text,
+            report_id=report_id,
+            script_id=request.script_id,
+            db=db,
+            genre=request.genre,
+            comps=request.comps,
+            analysis_depth=request.analysis_depth,
         )
-        
-    except PDFExportError as e:
-        raise HTTPException(status_code=500, detail=f"PDF export failed: {str(e)}")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
-
-
-# Admin endpoints for system maintenance
-
-@router.post("/admin/cleanup-stuck-jobs")
-async def cleanup_stuck_jobs(db: AsyncSession = Depends(get_db)):
-    """Admin endpoint to mark stuck jobs as failed.
-    
-    Jobs are considered "stuck" if they've been in QUEUED or PROCESSING
-    state for more than 10 minutes without an update.
-    """
-    from datetime import datetime, timedelta
-    from sqlalchemy import select
-    from app.models import AnalysisJob, JobStatus
-    
-    stuck_threshold = datetime.utcnow() - timedelta(minutes=10)
-    
-    result = await db.execute(
-        select(AnalysisJob).where(
-            AnalysisJob.status.in_([JobStatus.QUEUED, JobStatus.PROCESSING]),
-            AnalysisJob.updated_at < stuck_threshold
-        )
-    )
-    stuck_jobs = result.scalars().all()
-    
-    cleaned_count = 0
-    for job in stuck_jobs:
-        try:
-            job.status = JobStatus.FAILED
-            job.error_message = "Job marked as failed due to timeout (admin cleanup)"
-            job.completed_at = datetime.utcnow()
-            job.updated_at = datetime.utcnow()
-            cleaned_count += 1
-        except Exception as e:
-            print(f"Failed to clean up job {job.id}: {e}")
-    
-    if cleaned_count > 0:
-        await db.commit()
-    
-    return {
-        "cleaned_up": cleaned_count,
-        "total_stuck": len(stuck_jobs),
-        "job_ids": [j.id for j in stuck_jobs]
-    }
-
-
-@router.get("/admin/job-status")
-async def get_all_job_status(db: AsyncSession = Depends(get_db)):
-    """Admin endpoint to get status of all jobs."""
-    from sqlalchemy import select, func
-    from app.models import AnalysisJob, JobStatus
-    
-    # Get counts by status
-    result = await db.execute(
-        select(AnalysisJob.status, func.count(AnalysisJob.id))
-        .group_by(AnalysisJob.status)
-    )
-    status_counts = {status.value: count for status, count in result.all()}
-    
-    # Get active jobs (queued or processing)
-    result = await db.execute(
-        select(AnalysisJob)
-        .where(AnalysisJob.status.in_([JobStatus.QUEUED, JobStatus.PROCESSING]))
-        .order_by(AnalysisJob.created_at.desc())
-    )
-    active_jobs = result.scalars().all()
-    
-    return {
-        "counts": status_counts,
-        "active_jobs": [
-            {
-                "id": j.id,
-                "status": j.status.value,
-                "progress": j.progress,
-                "created_at": j.created_at.isoformat(),
-                "updated_at": j.updated_at.isoformat(),
-                "age_seconds": (datetime.utcnow() - j.created_at).total_seconds()
-            }
-            for j in active_jobs
-        ]
-    }
+        return await _format_report_response(updated, script, db)
+    except AnalysisError as exc:
+        raise HTTPException(status_code=500, detail=f"Analysis failed: {exc}") from exc

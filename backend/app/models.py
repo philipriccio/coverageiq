@@ -1,12 +1,13 @@
 """Database models for CoverageIQ.
 
 Privacy-first design: Script content is NEVER stored.
-Only metadata and generated reports are persisted.
+Only metadata, generated reports, curated examples, and domain knowledge are persisted.
 """
 from datetime import datetime, timedelta
 from enum import Enum
 from typing import Optional, List
-from sqlalchemy import String, Integer, DateTime, Text, JSON, ForeignKey, Enum as SQLEnum, create_engine
+
+from sqlalchemy import String, Integer, DateTime, Text, JSON, ForeignKey, Enum as SQLEnum, Boolean
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -15,20 +16,17 @@ class Base(DeclarativeBase):
 
 
 class ScriptFormat(str, Enum):
-    """Supported script formats."""
     PDF = "pdf"
     FDX = "fdx"
 
 
 class ReportStatus(str, Enum):
-    """Status of coverage report generation."""
     PROCESSING = "processing"
     COMPLETED = "completed"
     FAILED = "failed"
 
 
 class JobStatus(str, Enum):
-    """Status of async analysis job."""
     QUEUED = "queued"
     PROCESSING = "processing"
     COMPLETED = "completed"
@@ -36,175 +34,137 @@ class JobStatus(str, Enum):
 
 
 class Recommendation(str, Enum):
-    """Overall recommendation based on total score."""
-    PASS = "Pass"           # 0-24: Not ready for consideration
-    CONSIDER = "Consider"   # 25-37: Shows promise with reservations
-    RECOMMEND = "Recommend" # 38-50: Strong contender
+    PASS = "Pass"
+    CONSIDER = "Consider"
+    RECOMMEND = "Recommend"
 
 
 class ScriptMetadata(Base):
-    """Metadata about uploaded scripts. NO script content is stored.
-    
-    Privacy Note: This table contains only metadata (title, page count, hashes).
-    The actual script content is processed in-memory only and never persisted.
-    """
     __tablename__ = "script_metadata"
-    
+
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     user_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
-    
-    # File metadata (NOT the file itself or its content)
-    filename_hash: Mapped[str] = mapped_column(String(64), nullable=False)  # SHA256 of filename
-    file_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)  # SHA256 of content
+    filename_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    file_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     format: Mapped[ScriptFormat] = mapped_column(SQLEnum(ScriptFormat), nullable=False)
-    
-    # Script metadata extracted during processing
     title: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     author: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     page_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    
-    # Relationships
+
     reports: Mapped[List["CoverageReport"]] = relationship(
-        "CoverageReport", 
+        "CoverageReport",
         back_populates="script",
-        cascade="all, delete-orphan"
+        cascade="all, delete-orphan",
     )
-    
-    def __repr__(self) -> str:
-        return f"<ScriptMetadata(id={self.id}, title={self.title}, format={self.format})>"
 
 
 class CoverageReport(Base):
-    """Generated coverage report for a script.
-    
-    Contains all analysis results including scores, commentary, and evidence quotes.
-    NO raw script content is stored here.
-    """
     __tablename__ = "coverage_reports"
-    
+
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     script_id: Mapped[str] = mapped_column(
-        String(36), 
+        String(36),
         ForeignKey("script_metadata.id", ondelete="CASCADE"),
         nullable=False,
-        index=True
+        index=True,
     )
-    
-    # Analysis configuration
+
     genre: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
-    comps: Mapped[Optional[List[str]]] = mapped_column(JSON, nullable=True)  # Comparable films
-    analysis_depth: Mapped[str] = mapped_column(String(20), default="standard")  # quick/standard/deep
-    
-    # Status tracking
-    status: Mapped[ReportStatus] = mapped_column(
-        SQLEnum(ReportStatus), 
-        default=ReportStatus.PROCESSING
-    )
+    comps: Mapped[Optional[List[str]]] = mapped_column(JSON, nullable=True)
+    analysis_depth: Mapped[str] = mapped_column(String(20), default="standard")
+
+    status: Mapped[ReportStatus] = mapped_column(SQLEnum(ReportStatus), default=ReportStatus.PROCESSING)
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    
-    # Subscores (5 categories × /10 = /50 total)
-    subscores: Mapped[dict] = mapped_column(JSON, default=dict)  # {category: score}
-    # Example: {"concept": 8, "structure": 7, "character": 9, "market": 6, "writing": 8}
-    
-    total_score: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # /50
-    recommendation: Mapped[Optional[Recommendation]] = mapped_column(
-        SQLEnum(Recommendation), 
-        nullable=True
-    )
-    
-    # Report content
+
+    subscores: Mapped[dict] = mapped_column(JSON, default=dict)
+    total_score: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    recommendation: Mapped[Optional[Recommendation]] = mapped_column(SQLEnum(Recommendation), nullable=True)
+
     logline: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     synopsis: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     overall_comments: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    
     strengths: Mapped[List[str]] = mapped_column(JSON, default=list)
     weaknesses: Mapped[List[str]] = mapped_column(JSON, default=list)
-    
     character_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     structure_analysis: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     market_positioning: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    
-    # Evidence quotes (1-2 lines max, with page references)
     evidence_quotes: Mapped[List[dict]] = mapped_column(JSON, default=list)
-    # Example: [{"quote": "Dialogue here", "page": 23, "context": "brief note"}]
-    
-    # LLM metadata
-    model_used: Mapped[str] = mapped_column(String(50), default="kimi-k2.5")
-    
+
+    model_used: Mapped[str] = mapped_column(String(50), default="gpt-4.1")
+
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
-    
-    # Data retention - for automated cleanup (90 days from creation)
-    expires_at: Mapped[datetime] = mapped_column(
-        DateTime,
-        default=lambda: datetime.utcnow() + timedelta(days=90)
-    )
-    
-    # Relationships
+    expires_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.utcnow() + timedelta(days=90))
+
     script: Mapped["ScriptMetadata"] = relationship("ScriptMetadata", back_populates="reports")
-    
+    examples: Mapped[List["CoverageExample"]] = relationship(
+        "CoverageExample",
+        back_populates="coverage_report",
+        cascade="all, delete-orphan",
+    )
+
     def calculate_recommendation(self) -> Optional[Recommendation]:
-        """Calculate recommendation based on total score."""
         if self.total_score is None:
             return None
         if self.total_score >= 38:
             return Recommendation.RECOMMEND
-        elif self.total_score >= 25:
+        if self.total_score >= 25:
             return Recommendation.CONSIDER
-        else:
-            return Recommendation.PASS
-    
-    def __repr__(self) -> str:
-        return f"<CoverageReport(id={self.id}, script_id={self.script_id}, status={self.status})>"
+        return Recommendation.PASS
 
 
 class AnalysisJob(Base):
-    """Async job queue for coverage analysis.
-    
-    Tracks the status of long-running analysis jobs to enable
-    non-blocking coverage generation with progress updates.
-    """
     __tablename__ = "analysis_jobs"
-    
+
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     script_id: Mapped[str] = mapped_column(
         String(36),
         ForeignKey("script_metadata.id", ondelete="CASCADE"),
         nullable=False,
-        index=True
+        index=True,
     )
     report_id: Mapped[Optional[str]] = mapped_column(
         String(36),
         ForeignKey("coverage_reports.id", ondelete="SET NULL"),
-        nullable=True
+        nullable=True,
     )
-    
-    # Job status and progress
-    status: Mapped[JobStatus] = mapped_column(
-        SQLEnum(JobStatus),
-        default=JobStatus.QUEUED
-    )
-    progress: Mapped[int] = mapped_column(Integer, default=0)  # 0-100
+    status: Mapped[JobStatus] = mapped_column(SQLEnum(JobStatus), default=JobStatus.QUEUED)
+    progress: Mapped[int] = mapped_column(Integer, default=0)
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    
-    # Analysis configuration (stored for retry capability)
     genre: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     comps: Mapped[Optional[List[str]]] = mapped_column(JSON, nullable=True)
     analysis_depth: Mapped[str] = mapped_column(String(20), default="standard")
-    
-    # Script text hash for verification (NOT the actual text)
     script_text_hash: Mapped[str] = mapped_column(String(64), nullable=False)
-    
-    # Timestamps
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime,
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow
-    )
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
-    
-    def __repr__(self) -> str:
-        return f"<AnalysisJob(id={self.id}, script_id={self.script_id}, status={self.status.value}, progress={self.progress})>"
+
+
+class CoverageExample(Base):
+    __tablename__ = "coverage_examples"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    script_title: Mapped[str] = mapped_column(String(500), nullable=False)
+    genre: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
+    analysis_depth: Mapped[str] = mapped_column(String(20), default="standard")
+    coverage_report_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("coverage_reports.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
+    is_featured: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    coverage_report: Mapped["CoverageReport"] = relationship("CoverageReport", back_populates="examples")
+
+
+class DomainKnowledge(Base):
+    __tablename__ = "domain_knowledge"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    category: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
