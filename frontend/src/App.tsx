@@ -662,25 +662,7 @@ function ReportViewer({
             </PinnedCard>
           )}
 
-          {/* Evidence Quotes */}
-          {report.evidence_quotes && report.evidence_quotes.length > 0 && (
-            <PinnedCard title="Evidence Quotes" colorIndex={5}>
-              <div className="space-y-4">
-                {report.evidence_quotes.map((eq, i) => (
-                  <div key={i} className="relative pl-4">
-                    <div className="absolute left-0 top-0 bottom-0 w-1 rounded-full bg-amber-400/60" />
-                    <blockquote className="italic text-slate-700 text-sm leading-relaxed mb-1">
-                      "{eq.quote}"
-                    </blockquote>
-                    <div className="flex items-center gap-2 text-xs text-slate-500">
-                      <span className="font-medium bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded">p.{eq.page}</span>
-                      {eq.context && <span>{eq.context}</span>}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </PinnedCard>
-          )}
+          {/* Evidence Quotes intentionally hidden */}
         </div>
 
         {/* Right Column */}
