@@ -306,6 +306,66 @@ function StructureAnalysisRenderer({ value }: { value: string }) {
   )
 }
 
+// ─── Market Positioning renderer ─────────────────────────────────────────────
+
+const marketPositioningTextFields: Array<{ key: string; label: string }> = [
+  { key: 'genre', label: 'Genre' },
+  { key: 'tone', label: 'Tone' },
+  { key: 'target_network', label: 'Target Network' },
+  { key: 'target_audience', label: 'Target Audience' },
+  { key: 'market_timing', label: 'Market Timing' },
+  { key: 'castability', label: 'Castability' },
+  { key: 'production_considerations', label: 'Production Considerations' },
+]
+
+function MarketPositioningRenderer({ value }: { value: string }) {
+  const parsed = tryParseJSON(value) as {
+    genre?: string
+    tone?: string
+    comparable_series?: string[]
+    target_network?: string
+    target_audience?: string
+    market_timing?: string
+    castability?: string
+    production_considerations?: string
+  } | null
+
+  if (!parsed) {
+    return (
+      <div className="space-y-1">
+        {value.split('\n').filter(Boolean).map((line, i) => (
+          <p key={i} className="text-slate-700 text-sm leading-relaxed">{line}</p>
+        ))}
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-3">
+      {marketPositioningTextFields.map(({ key, label }) => {
+        const val = (parsed as Record<string, unknown>)[key]
+        if (!val) return null
+        return (
+          <div key={key}>
+            <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide mb-0.5">{label}</p>
+            <p className="text-slate-700 text-sm leading-relaxed">{String(val)}</p>
+          </div>
+        )
+      })}
+      {parsed.comparable_series && parsed.comparable_series.length > 0 && (
+        <div>
+          <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide mb-1">Comparable Series</p>
+          <div className="flex flex-wrap gap-2">
+            {parsed.comparable_series.map((s, i) => (
+              <span key={i} className="px-3 py-1 rounded-full bg-white/80 border border-amber-200 text-sm text-amber-900 font-medium">{s}</span>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Score key label map ──────────────────────────────────────────────────────
 
 const scoreKeyLabels: Record<string, string> = {
@@ -585,7 +645,7 @@ function ReportViewer({
           {/* Market Positioning */}
           {report.market_positioning && (
             <PinnedCard title="Market Positioning" colorIndex={4}>
-              <div className="space-y-1">{renderParagraphs(report.market_positioning)}</div>
+              <MarketPositioningRenderer value={report.market_positioning} />
             </PinnedCard>
           )}
         </div>
@@ -632,30 +692,6 @@ function ReportViewer({
                     label={label}
                     rationale={item.rationale}
                   />
-                ))}
-              </div>
-            </PinnedCard>
-          )}
-
-          {/* Evidence Quotes */}
-          {report.evidence_quotes?.length > 0 && (
-            <PinnedCard title="Evidence Quotes" colorIndex={2}>
-              <div className="space-y-4">
-                {report.evidence_quotes.map((q, i) => (
-                  <div
-                    key={i}
-                    className="bg-white/60 rounded-lg p-3 border border-amber-100"
-                  >
-                    <span className="text-xs font-semibold text-amber-700 uppercase tracking-wide">
-                      Page {q.page}
-                    </span>
-                    <blockquote className="mt-2 text-slate-700 text-sm italic leading-relaxed border-l-2 border-amber-400 pl-3">
-                      "{q.quote}"
-                    </blockquote>
-                    {q.context && (
-                      <p className="mt-1 text-xs text-slate-500">{q.context}</p>
-                    )}
-                  </div>
                 ))}
               </div>
             </PinnedCard>
