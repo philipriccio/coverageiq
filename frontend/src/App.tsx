@@ -880,11 +880,8 @@ function AdminPage() {
 // ─── Main App ─────────────────────────────────────────────────────────────────
 
 function App() {
-  const [scriptContent, setScriptContent] = useState('')
   const [scriptFile, setScriptFile] = useState<File | null>(null)
-  const [scriptTitle, setScriptTitle] = useState('')
-  const [genre, setGenre] = useState('drama')
-  const [comps, setComps] = useState('')
+  const [isDragging, setIsDragging] = useState(false)
   const [analysisDepth, setAnalysisDepth] = useState('standard')
   const [activeTab, setActiveTab] = useState<'new' | 'history'>('new')
   const [report, setReport] = useState<CoverageReport | null>(null)
@@ -951,41 +948,25 @@ function App() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (!scriptFile) return
     setError('')
     setReport(null)
     setIsAnalyzing(true)
     try {
-      let scriptId: string
-      let scriptText: string
-      if (scriptFile) {
-        const formData = new FormData()
-        formData.append('file', scriptFile)
-        formData.append('title', scriptTitle || scriptFile.name.replace(/\.[^/.]+$/, ''))
-        formData.append('content_type', 'tv_pilot')
-        const uploadRes = await axios.post(`${API_BASE}/api/scripts/upload-file`, formData, {
-          headers: { 'Content-Type': 'multipart/form-data' },
-        })
-        scriptId = uploadRes.data.script_id
-        scriptText = uploadRes.data.extracted_text || ''
-      } else {
-        const uploadRes = await axios.post(`${API_BASE}/api/scripts/upload`, {
-          title: scriptTitle || 'Untitled Script',
-          content: scriptContent,
-          content_type: 'tv_pilot',
-        })
-        scriptId = uploadRes.data.script_id
-        scriptText = scriptContent
-      }
+      const formData = new FormData()
+      formData.append('file', scriptFile)
+      formData.append('title', scriptFile.name.replace(/\.[^/.]+$/, ''))
+      formData.append('content_type', 'tv_pilot')
+      const uploadRes = await axios.post(`${API_BASE}/api/scripts/upload-file`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      const scriptId: string = uploadRes.data.script_id
+      const scriptText: string = uploadRes.data.extracted_text || ''
       const asyncRes = await axios.post(`${API_BASE}/api/coverage/generate-async`, {
         script_id: scriptId,
         script_text: scriptText,
-        genre,
-        comps: comps
-          ? comps
-              .split(',')
-              .map((c) => c.trim())
-              .filter(Boolean)
-          : [],
+        genre: '',
+        comps: [],
         analysis_depth: analysisDepth,
       })
       startPolling(asyncRes.data.job_id, asyncRes.data.report_id)
@@ -1123,38 +1104,6 @@ function App() {
           <form onSubmit={handleSubmit}>
             <div className="form-row">
               <div className="form-group">
-                <label htmlFor="title">Script Title</label>
-                <input
-                  id="title"
-                  value={scriptTitle}
-                  onChange={(e) => setScriptTitle(e.target.value)}
-                  placeholder="e.g., The Last Frontier"
-                />
-              </div>
-              <div className="form-group">
-                <label htmlFor="genre">Genre</label>
-                <select id="genre" value={genre} onChange={(e) => setGenre(e.target.value)}>
-                  <option value="drama">Drama</option>
-                  <option value="comedy">Comedy</option>
-                  <option value="thriller">Thriller</option>
-                  <option value="sci-fi">Sci-Fi</option>
-                  <option value="crime">Crime</option>
-                  <option value="horror">Horror</option>
-                  <option value="procedural">Procedural</option>
-                </select>
-              </div>
-            </div>
-            <div className="form-row">
-              <div className="form-group">
-                <label htmlFor="comps">Comparable Series</label>
-                <input
-                  id="comps"
-                  value={comps}
-                  onChange={(e) => setComps(e.target.value)}
-                  placeholder="e.g., Northern Exposure, ER"
-                />
-              </div>
-              <div className="form-group">
                 <label htmlFor="depth">Analysis Depth</label>
                 <select
                   id="depth"
@@ -1168,36 +1117,55 @@ function App() {
               </div>
             </div>
             <div className="form-group full-width">
-              <label htmlFor="scriptFile">Upload Script File (PDF or Final Draft)</label>
+              <label>Script File</label>
+              {/* Drop zone */}
+              <div
+                onDragOver={(e) => { e.preventDefault(); setIsDragging(true) }}
+                onDragLeave={() => setIsDragging(false)}
+                onDrop={(e) => {
+                  e.preventDefault()
+                  setIsDragging(false)
+                  const file = e.dataTransfer.files?.[0]
+                  if (file) setScriptFile(file)
+                }}
+                onClick={() => document.getElementById('scriptFileInput')?.click()}
+                style={{
+                  border: `2px dashed ${isDragging ? '#d97706' : '#fbbf24'}`,
+                  borderRadius: '0.75rem',
+                  padding: '2.5rem 1.5rem',
+                  textAlign: 'center',
+                  cursor: 'pointer',
+                  background: isDragging ? 'rgba(251,191,36,0.08)' : 'rgba(255,251,235,0.6)',
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                {scriptFile ? (
+                  <p style={{ color: '#92400e', fontWeight: 600, margin: 0 }}>
+                    📄 {scriptFile.name}
+                  </p>
+                ) : (
+                  <>
+                    <p style={{ color: '#b45309', fontWeight: 600, margin: '0 0 0.5rem' }}>
+                      Drag &amp; drop your script here, or click to browse
+                    </p>
+                    <p style={{ color: '#a16207', fontSize: '0.85rem', margin: 0 }}>
+                      Accepts .pdf and .fdx files
+                    </p>
+                  </>
+                )}
+              </div>
               <input
-                id="scriptFile"
+                id="scriptFileInput"
                 type="file"
                 accept=".pdf,.fdx"
+                style={{ display: 'none' }}
                 onChange={(e) => {
                   const file = e.target.files?.[0]
-                  if (file) {
-                    setScriptFile(file)
-                    setScriptContent('')
-                  }
+                  if (file) setScriptFile(file)
                 }}
               />
-              {scriptFile && <p className="file-selected">Selected: {scriptFile.name}</p>}
             </div>
-            <div className="form-group full-width">
-              <label htmlFor="script">Or Paste Script Text</label>
-              <textarea
-                id="script"
-                rows={20}
-                value={scriptContent}
-                onChange={(e) => {
-                  setScriptContent(e.target.value)
-                  setScriptFile(null)
-                }}
-                placeholder="Paste your TV pilot script here..."
-                disabled={!!scriptFile}
-              />
-            </div>
-            <button type="submit" disabled={isAnalyzing || (!scriptFile && !scriptContent)}>
+            <button type="submit" disabled={isAnalyzing || !scriptFile}>
               Generate Coverage Report
             </button>
           </form>
