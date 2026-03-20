@@ -189,6 +189,123 @@ function MandateItem({ checked, label, rationale }: { checked: boolean; label: s
   )
 }
 
+// ─── JSON field parsers for character_notes and structure_analysis ───────────
+
+function tryParseJSON(value: string): unknown | null {
+  try {
+    return JSON.parse(value)
+  } catch {
+    return null
+  }
+}
+
+function CharacterNotesRenderer({ value }: { value: string }) {
+  const parsed = tryParseJSON(value) as {
+    protagonist?: { name?: string; assessment?: string; series_runway?: string }
+    supporting_cast?: { assessment?: string; standouts?: string[]; concerns?: string[] }
+    character_dynamics?: string
+  } | null
+
+  if (!parsed) {
+    // plain text fallback
+    return (
+      <div className="space-y-1">
+        {value.split('\n').filter(Boolean).map((line, i) => (
+          <p key={i} className="text-slate-700 text-sm leading-relaxed">{line}</p>
+        ))}
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      {parsed.protagonist && (
+        <div>
+          <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide mb-1">
+            Protagonist{parsed.protagonist.name ? ` — ${parsed.protagonist.name}` : ''}
+          </p>
+          {parsed.protagonist.assessment && (
+            <p className="text-slate-700 text-sm leading-relaxed mb-1">{parsed.protagonist.assessment}</p>
+          )}
+          {parsed.protagonist.series_runway && (
+            <p className="text-slate-600 text-sm leading-relaxed italic">{parsed.protagonist.series_runway}</p>
+          )}
+        </div>
+      )}
+      {parsed.supporting_cast && (
+        <div>
+          <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide mb-1">Supporting Cast</p>
+          {parsed.supporting_cast.assessment && (
+            <p className="text-slate-700 text-sm leading-relaxed mb-2">{parsed.supporting_cast.assessment}</p>
+          )}
+          {parsed.supporting_cast.standouts && parsed.supporting_cast.standouts.length > 0 && (
+            <div className="mb-1">
+              <p className="text-xs font-medium text-slate-500 mb-1">Standouts</p>
+              <div className="flex flex-wrap gap-1">
+                {parsed.supporting_cast.standouts.map((name, i) => (
+                  <span key={i} className="px-2 py-0.5 rounded-full bg-white/70 border border-amber-200 text-xs text-amber-900 font-medium">{name}</span>
+                ))}
+              </div>
+            </div>
+          )}
+          {parsed.supporting_cast.concerns && parsed.supporting_cast.concerns.length > 0 && (
+            <div>
+              <p className="text-xs font-medium text-slate-500 mb-1">Concerns</p>
+              {parsed.supporting_cast.concerns.map((c, i) => (
+                <p key={i} className="text-slate-600 text-sm italic">{c}</p>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+      {parsed.character_dynamics && (
+        <div>
+          <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide mb-1">Character Dynamics</p>
+          <p className="text-slate-700 text-sm leading-relaxed">{parsed.character_dynamics}</p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+const structureKeyLabels: Record<string, string> = {
+  pilot_type: 'Pilot Type',
+  act_breaks: 'Act Breaks',
+  pacing: 'Pacing',
+  cold_open: 'Cold Open',
+  act_one: 'Act One',
+  act_two: 'Act Two',
+  act_three: 'Act Three',
+  tag: 'Tag / Coda',
+}
+
+function StructureAnalysisRenderer({ value }: { value: string }) {
+  const parsed = tryParseJSON(value) as Record<string, string> | null
+
+  if (!parsed) {
+    return (
+      <div className="space-y-1">
+        {value.split('\n').filter(Boolean).map((line, i) => (
+          <p key={i} className="text-slate-700 text-sm leading-relaxed">{line}</p>
+        ))}
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-3">
+      {Object.entries(parsed).map(([key, val]) => (
+        <div key={key}>
+          <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide mb-0.5">
+            {structureKeyLabels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
+          </p>
+          <p className="text-slate-700 text-sm leading-relaxed">{String(val)}</p>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 // ─── Score key label map ──────────────────────────────────────────────────────
 
 const scoreKeyLabels: Record<string, string> = {
@@ -454,14 +571,14 @@ function ReportViewer({
           {/* Character Notes */}
           {report.character_notes && (
             <PinnedCard title="Character Notes" colorIndex={2}>
-              <div className="space-y-1">{renderParagraphs(report.character_notes)}</div>
+              <CharacterNotesRenderer value={report.character_notes} />
             </PinnedCard>
           )}
 
           {/* Structure Analysis */}
           {report.structure_analysis && (
             <PinnedCard title="Structure Analysis" colorIndex={3}>
-              <div className="space-y-1">{renderParagraphs(report.structure_analysis)}</div>
+              <StructureAnalysisRenderer value={report.structure_analysis} />
             </PinnedCard>
           )}
 
