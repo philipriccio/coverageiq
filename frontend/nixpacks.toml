@@ -1,2 +1,2 @@
 [start]
-cmd = "cp /usr/share/nginx/html/nginx.conf /etc/nginx/conf.d/default.conf && nginx -g 'daemon off;'"
+cmd = "/usr/share/nginx/html/start.sh"
