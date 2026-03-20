@@ -763,7 +763,7 @@ function ReportViewer({
                     {
                       type: 'COVERAGEIQ_SAVE',
                       payload: {
-                        title: report.title ?? 'AI Coverage',
+                        title: report.script_title ?? 'AI Coverage',
                         verdict: (report.recommendation ?? 'PASS').toUpperCase(),
                         total_score: report.total_score ?? null,
                         subscores,
