@@ -717,6 +717,36 @@ function ReportViewer({
                 {exporting.pdf ? 'Generating…' : '📑 Download PDF'}
               </button>
             </div>
+
+            {/* Save to CRM — only shown when embedded in Hawco CRM */}
+            {typeof window !== 'undefined' && window.self !== window.top && (
+              <button
+                onClick={() => {
+                  const subscores: Record<string, number> = {}
+                  Object.entries(report.subscores || {}).forEach(([key, value]) => {
+                    subscores[key] = typeof value === 'number' ? value : (value as { score?: number }).score ?? 0
+                  })
+                  window.parent.postMessage(
+                    {
+                      type: 'COVERAGEIQ_SAVE',
+                      payload: {
+                        title: report.title ?? 'AI Coverage',
+                        verdict: (report.recommendation ?? 'PASS').toUpperCase(),
+                        total_score: report.total_score ?? null,
+                        subscores,
+                        summary: report.synopsis ?? report.logline ?? '',
+                        raw_report: report,
+                      },
+                    },
+                    '*'
+                  )
+                }}
+                type="button"
+                className="mt-3 w-full flex items-center justify-center gap-2 px-4 py-3 bg-violet-600 text-white rounded-lg text-sm font-medium hover:bg-violet-700 transition-colors"
+              >
+                💾 Save to CRM Project
+              </button>
+            )}
           </PinnedCard>
         </div>
       </div>
