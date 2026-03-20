@@ -236,6 +236,48 @@ async def get_coverage(report_id: str, db: AsyncSession = Depends(get_db)):
     return await _format_report_response(report, script, db)
 
 
+@router.post("/{report_id}/reanalyze", response_model=AsyncJobResponse)
+async def reanalyze_report(report_id: str, db: AsyncSession = Depends(get_db)):
+    """Re-run coverage analysis on the same script using stored script text."""
+    result = await db.execute(select(CoverageReport).where(CoverageReport.id == report_id))
+    report = result.scalar_one_or_none()
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+
+    script_result = await db.execute(select(ScriptMetadata).where(ScriptMetadata.id == report.script_id))
+    script = script_result.scalar_one_or_none()
+    if not script:
+        raise HTTPException(status_code=404, detail="Script not found")
+    if not script.script_text:
+        raise HTTPException(status_code=400, detail="Script text not stored — cannot re-analyze. Re-upload the script.")
+
+    new_report_id = str(uuid.uuid4())
+    new_report = CoverageReport(
+        id=new_report_id,
+        script_id=report.script_id,
+        genre=report.genre,
+        comps=report.comps or [],
+        analysis_depth=report.analysis_depth,
+        status=ReportStatus.PROCESSING,
+        subscores={},
+        model_used="gpt-4.1",
+    )
+    db.add(new_report)
+    await db.commit()
+
+    job = await JobManager.create_job(
+        script_id=report.script_id,
+        script_text=script.script_text,
+        report_id=new_report_id,
+        db=db,
+        genre=report.genre,
+        comps=report.comps,
+        analysis_depth=report.analysis_depth,
+    )
+    JobManager.start_background_task(job_id=job.id, script_text=script.script_text, report_id=new_report_id)
+    return AsyncJobResponse(job_id=job.id, report_id=new_report_id, status=JobStatus.QUEUED.value, message="Re-analysis started")
+
+
 @router.post("/{report_id}/flag-example")
 async def flag_report_as_example(report_id: str, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(CoverageReport).where(CoverageReport.id == report_id))

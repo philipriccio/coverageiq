@@ -157,15 +157,14 @@ async def upload_script_file(
         format=format_enum,
         title=extraction_result.get("title"),
         page_count=extraction_result.get("page_count"),
+        script_text=extraction_result.get("text"),  # Store for re-analyze feature
         created_at=datetime.utcnow()
     )
     
     db.add(script_metadata)
     await db.commit()
     
-    # IMPORTANT: extraction_result["text"] is NOT stored
-    # It exists only in this function's scope and will be garbage collected
-    # But we return it here so the frontend can immediately use it for analysis
+    # Script text is also returned here so the frontend can immediately use it for analysis
     
     return {
         "script_id": script_id,

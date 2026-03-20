@@ -389,16 +389,20 @@ function ReportViewer({
   onExportPDF,
   onExportGoogleDoc,
   onFlagExample,
+  onReanalyze,
   exporting,
   flagging,
+  reanalyzing,
 }: {
   report: CoverageReport
   onBack: () => void
   onExportPDF: () => void
   onExportGoogleDoc: () => void
   onFlagExample: () => void
+  onReanalyze: () => void
   exporting: { pdf: boolean; googleDoc: boolean }
   flagging: boolean
+  reanalyzing: boolean
 }) {
   const subscoreEntries = Object.entries(report.subscores || {}).map(([key, value]) => ({
     key,
@@ -508,6 +512,15 @@ function ReportViewer({
                 className="inline-flex items-center gap-2 px-4 py-2 bg-amber-50 text-amber-700 rounded-lg hover:bg-amber-100 transition-colors text-sm font-medium border border-amber-200 disabled:opacity-60"
               >
                 {report.is_flagged_example ? '★ Saved as example' : flagging ? 'Saving…' : '★ Flag as example'}
+              </button>
+
+              <button
+                type="button"
+                onClick={onReanalyze}
+                disabled={reanalyzing}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition-colors text-sm font-medium border border-slate-300 disabled:opacity-60"
+              >
+                {reanalyzing ? '⟳ Re-analyzing…' : '⟳ Re-analyze'}
               </button>
             </div>
           </div>
@@ -646,6 +659,26 @@ function ReportViewer({
           {report.market_positioning && (
             <PinnedCard title="Market Positioning" colorIndex={4}>
               <MarketPositioningRenderer value={report.market_positioning} />
+            </PinnedCard>
+          )}
+
+          {/* Evidence Quotes */}
+          {report.evidence_quotes && report.evidence_quotes.length > 0 && (
+            <PinnedCard title="Evidence Quotes" colorIndex={5}>
+              <div className="space-y-4">
+                {report.evidence_quotes.map((eq, i) => (
+                  <div key={i} className="relative pl-4">
+                    <div className="absolute left-0 top-0 bottom-0 w-1 rounded-full bg-amber-400/60" />
+                    <blockquote className="italic text-slate-700 text-sm leading-relaxed mb-1">
+                      "{eq.quote}"
+                    </blockquote>
+                    <div className="flex items-center gap-2 text-xs text-slate-500">
+                      <span className="font-medium bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded">p.{eq.page}</span>
+                      {eq.context && <span>{eq.context}</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
             </PinnedCard>
           )}
         </div>
@@ -1226,6 +1259,7 @@ function App() {
   const [error, setError] = useState('')
   const [exporting, setExporting] = useState({ pdf: false, googleDoc: false })
   const [flagging, setFlagging] = useState(false)
+  const [reanalyzing, setReanalyzing] = useState(false)
 
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
@@ -1365,6 +1399,24 @@ function App() {
     }
   }
 
+  const handleReanalyze = async () => {
+    if (!report) return
+    setReanalyzing(true)
+    setError('')
+    try {
+      const res = await axios.post(`${API_BASE}/api/coverage/${report.report_id}/reanalyze`)
+      const { job_id, report_id: newReportId } = res.data as { job_id: string; report_id: string }
+      setReport(null)
+      setIsAnalyzing(true)
+      startPolling(job_id, newReportId)
+    } catch (err: unknown) {
+      const axiosErr = err as { response?: { data?: { detail?: string } } }
+      setError(axiosErr.response?.data?.detail || 'Re-analysis failed. Script text may not be stored — re-upload the script.')
+    } finally {
+      setReanalyzing(false)
+    }
+  }
+
   if (isAdminRoute) return <AdminPage />
 
   // When viewing a report, render full-page corkboard UI (outside the container)
@@ -1380,8 +1432,10 @@ function App() {
           onExportPDF={handleExportPDF}
           onExportGoogleDoc={handleExportGoogleDoc}
           onFlagExample={handleFlagExample}
+          onReanalyze={() => void handleReanalyze()}
           exporting={exporting}
           flagging={flagging}
+          reanalyzing={reanalyzing}
         />
         {error && (
           <div className="fixed bottom-4 right-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg shadow-lg">

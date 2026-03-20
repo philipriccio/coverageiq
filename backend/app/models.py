@@ -50,6 +50,7 @@ class ScriptMetadata(Base):
     title: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     author: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     page_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    script_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     reports: Mapped[List["CoverageReport"]] = relationship(
