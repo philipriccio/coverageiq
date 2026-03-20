@@ -386,10 +386,11 @@ SERIES ENGINE: "Three generations of one extended family navigate modern life to
     # ─── THRILLER ─────────────────────────────────────────────────────────────
 
     {
-        "category": "thriller",
+        "category": "comedy",
         "content": """BENCHMARK: Fleabag Pilot ("Episode 1", 2016 — Phoebe Waller-Bridge)
-CATEGORY: Thriller-Adjacent / Dark Comedy (Half-Hour)
+CATEGORY: Dark Comedy / Half-Hour Drama (Comedy-Drama)
 SCORE EQUIVALENT: 48/50 (RECOMMEND — one of the great modern pilots)
+NOTE: Formerly miscategorized as thriller — this is a dark comedy. Gold standard for half-hour comedy-drama.
 
 WHY THIS IS A BENCHMARK:
 - The fourth-wall breaks are not a gimmick — they ARE the series engine. Fleabag talks to us to avoid talking to the people in her life. The form mirrors the character's damage.
@@ -608,6 +609,267 @@ WHAT A SCRIPT MUST HAVE TO APPROACH THIS LEVEL:
 - A protagonist whose personal wound IS the series engine
 
 SERIES ENGINE: "A brilliant, troubled director returns to the Canadian theatre festival he fled to find his mentor's ghost waiting for him — and the theatre industry determined to sell Shakespeare."
+""",
+    },
+
+    # ─── DOCTOR / MEDICAL PROCEDURAL ─────────────────────────────────────────
+
+    {
+        "category": "procedural",
+        "content": """BENCHMARK: ER Pilot ("24 Hours", 1994 — Michael Crichton / John Wells)
+CATEGORY: Medical Procedural (One-Hour)
+SCORE EQUIVALENT: 46/50 (RECOMMEND — gold standard for medical procedural)
+SUBTYPE: medical
+
+WHY THIS IS A BENCHMARK:
+- The medical procedural engine at its purest: multiple simultaneous cases, ensemble cast under pressure, no single character is the hero — chaos is the engine.
+- The pilot invented the template that Grey's Anatomy, House, and every subsequent medical show has borrowed: interns in over their heads, attending physicians holding the line, the hospital itself as a machine that never stops.
+- The ER is the character. No one leaves. Cases pour in. The show's formal constraint (you cannot leave the ER) is also its moral engine — medicine is a duty, not a choice.
+- The ensemble is perfectly calibrated: each doctor has a specific role, a specific wound, a specific relationship to the chaos. Dr. Greene is the everyman holding it together. Dr. Ross is the brilliant one who can't follow rules.
+- No single case is the episode — the episode IS the accumulation of cases. That's the formal innovation.
+
+WHAT A MEDICAL PROCEDURAL MUST HAVE TO APPROACH THIS LEVEL:
+- A setting that generates infinite, escalating cases week after week
+- An ensemble where no single character is the hero — the team IS the protagonist
+- Chaos as a structural principle: multiple simultaneous cases running at different stages of resolution
+
+SERIES ENGINE: "The ER at County General Hospital in Chicago never stops — and neither do the doctors who can't leave it behind."
+""",
+    },
+
+    {
+        "category": "procedural",
+        "content": """BENCHMARK: House M.D. Pilot ("Pilot", 2004 — David Shore)
+CATEGORY: Medical Procedural / Character Study (One-Hour)
+SCORE EQUIVALENT: 45/50 (RECOMMEND — exceptional inversion of the medical procedural)
+SUBTYPE: medical
+
+WHY THIS IS A BENCHMARK:
+- House is the inverted procedural: the patient IS the mystery, House is the detective. Every episode is a puzzle. The medical case is a Sherlock Holmes mystery in a hospital setting.
+- Dr. Gregory House is one of the great star vehicles in broadcast TV history: brilliant, misanthropic, self-destructive, addicted to pills, and incapable of caring about anyone until he's proven he's the smartest person in the room. A great actor would kill for this role.
+- The engine is House's misanthropy vs. the humanity of medicine: House doesn't believe patients tell the truth. He doesn't believe in kindness. Yet he saves lives — not out of compassion, but out of intellectual compulsion. That contradiction runs seven seasons.
+- The pilot establishes the team structure (House's "fellows" as his extension) and the case structure (differential diagnosis as dramatic engine) simultaneously.
+- The show is a procedural that operates as a character study. The case of the week is always a mirror for House's personal dysfunction.
+
+WHAT A SCRIPT MUST HAVE TO APPROACH THIS LEVEL:
+- A lead character whose personal flaw is the show's engine — not despite the procedural, but through it
+- A formal device (the differential diagnosis) that generates dramatic tension through intellectual disagreement
+- The courage to make your protagonist genuinely unlikable and trust the audience to follow him anyway
+
+SERIES ENGINE: "A brilliant, misanthropic diagnostician treats impossible cases as puzzles to be solved — and everyone around him as obstacles to the truth."
+""",
+    },
+
+    # ─── LAWYER PROCEDURAL ────────────────────────────────────────────────────
+
+    {
+        "category": "procedural",
+        "content": """BENCHMARK: Suits Pilot ("Pilot", 2011 — Aaron Korsh)
+CATEGORY: Legal Procedural / Workplace Drama (One-Hour)
+SCORE EQUIVALENT: 42/50 (RECOMMEND — exceptional broadcast legal procedural)
+
+WHY THIS IS A BENCHMARK:
+- The premise is a perfect broadcast engine: a brilliant college dropout with a photographic memory gets hired at a top Manhattan law firm by a hotshot attorney — as a fake lawyer. Every episode runs on that secret.
+- The engine is Mike Ross's secret + Harvey Specter's ambition: two things that can never fully coexist. Every case they win together is also the case that could expose them. That's textbook dramatic irony as structural engine.
+- Harvey Specter is a star vehicle: the best closer in New York City, arrogant, secretly principled, fiercely loyal. He's the Tony Soprano of legal drama — someone you want to watch even when you're not sure you should be rooting for him.
+- The pilot delivers a complete episode (Mike proves himself on Harvey's biggest case) while embedding the multi-season engine (the secret that can never come out).
+- The workplace setting (Pearson Hardman law firm) generates infinite story: clients, cases, firm politics, partner wars.
+
+WHAT A SCRIPT MUST HAVE TO APPROACH THIS LEVEL:
+- A central secret that functions as a perpetual dramatic engine — not resolved in the pilot
+- A lead duo whose complementary flaws make them better together and more dangerous apart
+- A workplace setting where the professional world and personal world are impossible to separate
+
+SERIES ENGINE: "A brilliant law-school dropout pretends to be a Harvard attorney alongside the city's best closer — and the secret they share is both their greatest weapon and their greatest vulnerability."
+""",
+    },
+
+    # ─── FAMILY DRAMA ─────────────────────────────────────────────────────────
+
+    {
+        "category": "drama",
+        "content": """BENCHMARK: This Is Us Pilot ("Pilot", 2016 — Dan Fogelman)
+CATEGORY: Family Drama / Multi-Timeline (One-Hour)
+SCORE EQUIVALENT: 45/50 (RECOMMEND — exceptional structural innovation for network drama)
+
+WHY THIS IS A BENCHMARK:
+- The multi-timeline engine is the show's formal identity: three storylines converging — two in the present (Jack and Rebecca in 1980; Kevin, Kate, and Randall in the present day) — and then a twist that reframes the entire episode and the series.
+- The engine is the mystery of the family's past vs. present: we understand something is deeply wrong in this family. We don't know what. The show earns its emotion because it makes us figure out the damage before it shows us the cause.
+- The pilot is a masterclass in the reveal as structural principle: the final twist changes the meaning of everything that came before without cheapening it. That's the gold standard for the form.
+- The ensemble is perfectly distributed: each character carries their own storyline with their own engine. No one is just a supporting player to the lead.
+- For broadcast network drama: This Is Us is the proof that a deeply emotional, non-procedural family drama can find massive audiences — it ran five seasons on NBC.
+
+WHAT A SCRIPT MUST HAVE TO APPROACH THIS LEVEL:
+- A structural device (multiple timelines, non-linear) that is thematically motivated — the form must be about something, not just interesting
+- An ensemble where every character's wound connects to a shared family trauma
+- A pilot-ending reveal that reframes the entire episode without cheapening the emotion that led to it
+
+SERIES ENGINE: "Three siblings and the parents who shaped them — separated by time but connected by the wounds that made them who they are."
+""",
+    },
+
+    # ─── SOAPY DRAMA ──────────────────────────────────────────────────────────
+
+    {
+        "category": "drama",
+        "content": """BENCHMARK: Desperate Housewives Pilot ("Pilot", 2004 — Marc Cherry)
+CATEGORY: Mystery-Soap Hybrid / Dark Comedy-Drama (One-Hour)
+SCORE EQUIVALENT: 43/50 (RECOMMEND — genre-defining mystery-soap engine)
+
+WHY THIS IS A BENCHMARK:
+- Desperate Housewives invented its own genre: the suburban mystery-soap, where the comedy comes from the gap between the perfect surface of Wisteria Lane and the darkness underneath.
+- The engine is secrets revealed layer by layer: every character has something to hide. The dead narrator (Mary Alice) frames the entire show as a mystery. The season arc (why did she kill herself?) holds every episode together.
+- The formal device — a dead woman narrating her neighbors' lives — is a masterstroke. It gives the show a POV, a comedic voice, and a central mystery simultaneously.
+- Each housewife is a comedic archetype with a specific secret: Bree (perfectionist hiding a failing marriage), Lynette (overwhelmed mother hiding her resentment), Susan (romantically disastrous hiding her loneliness), Gabrielle (trophy wife hiding her emptiness). The secrets generate story across five seasons.
+- For broadcast drama: Desperate Housewives ran eight seasons and spawned international formats. The mystery-soap engine is one of the most commercially durable in television.
+
+WHAT A SCRIPT MUST HAVE TO APPROACH THIS LEVEL:
+- A setting where the surface is perfect and the darkness underneath is the actual story
+- A season-long mystery engine that holds episodic story together
+- Characters whose public personas and private realities are in permanent, comedic/dramatic conflict
+
+SERIES ENGINE: "On Wisteria Lane, the perfect suburban lives of four housewives conceal secrets that will eventually destroy everything — and the dead woman narrating can't stop watching."
+""",
+    },
+
+    {
+        "category": "drama",
+        "content": """BENCHMARK: Big Little Lies Pilot ("Somebody's Dead", 2017 — David E. Kelley)
+CATEGORY: Limited Series / Thriller-Drama (One-Hour)
+SCORE EQUIVALENT: 44/50 (RECOMMEND — exceptional limited series engine)
+
+WHY THIS IS A BENCHMARK:
+- Big Little Lies is the benchmark for the prestige limited series: a murder mystery in a wealthy coastal community, told through multiple unreliable narrators, with a feminist undercurrent.
+- The formal structure is the engine: we know someone died at the school fundraiser. We don't know who died or who killed them. The entire series is the answer to that question, told backward and sideways through the lives of three women.
+- The unreliable narrator device works because each woman has a reason to lie — and the show trusts the audience to triangulate the truth from their contradictions.
+- The three leads are all star vehicles: Madeline (sharp-tongued, controlling, hiding her own affair), Celeste (beautiful, successful, in a secretly abusive marriage), Jane (traumatized, guarded, looking for the man who assaulted her).
+- The murder mystery gives the show its procedural spine. The domestic drama — particularly Celeste's storyline — is the actual subject. The mystery is the frame; the abuse is the painting.
+
+WHAT A SCRIPT MUST HAVE TO APPROACH THIS LEVEL:
+- A central mystery that functions as a frame for a deeper, more important subject
+- Multiple protagonists who are all unreliable narrators for structural and character reasons
+- A limited series structure with a planned endpoint — don't pretend this is an ongoing series if it isn't
+
+SERIES ENGINE: "Three women in Monterey are connected to a death at a school fundraiser — but the question isn't who died, it's what drove them all to the edge."
+""",
+    },
+
+    # ─── COP / CRIME PROCEDURAL ───────────────────────────────────────────────
+
+    {
+        "category": "procedural",
+        "content": """BENCHMARK: Mindhunter Pilot ("Episode 1", 2017 — Joe Penhall)
+CATEGORY: Crime Procedural / Character Study (One-Hour)
+SCORE EQUIVALENT: 45/50 (RECOMMEND — exceptional — character study disguised as procedural)
+
+WHY THIS IS A BENCHMARK:
+- Mindhunter is the procedural as intellectual horror: two FBI agents in the 1970s develop the discipline of criminal psychology by interviewing convicted killers. The show asks: how do you interview monsters without becoming one?
+- The engine is the psychological contamination of the investigators: Holden Ford is brilliant, curious, and slowly being changed by the men he interviews. The show is about what it costs to understand evil.
+- The procedural frame (interviews with real serial killers — Ed Kemper, Dennis Rader) generates the weekly content. The serialized arc (how is Holden being changed?) generates the season engine. That two-track structure is textbook.
+- Holden Ford is a star vehicle: ambitious, intellectually arrogant, emotionally underdeveloped, increasingly unable to separate his professional empathy from his personal life. A great actor would want this role.
+- The show is uncomfortable in a productive way: the killers are interesting, articulate, and human. That discomfort is the point.
+
+WHAT A SCRIPT MUST HAVE TO APPROACH THIS LEVEL:
+- A procedural engine (the interviews) that is also a character-deterioration engine
+- The courage to make the antagonists — the killers — genuinely interesting rather than simply monstrous
+- A protagonist whose professional excellence is accelerating their personal disintegration
+
+SERIES ENGINE: "Two FBI agents build the science of criminal psychology by interviewing serial killers — and the closer they get to understanding evil, the harder it becomes to find their way back."
+""",
+    },
+
+    # ─── HALF-HOUR COMEDY-DRAMA ───────────────────────────────────────────────
+
+    {
+        "category": "comedy",
+        "content": """BENCHMARK: Fleabag Pilot ("Episode 1", 2016 — Phoebe Waller-Bridge)
+CATEGORY: Dark Comedy / Half-Hour Drama (Comedy-Drama)
+SCORE EQUIVALENT: 48/50 (RECOMMEND — one of the great modern pilots)
+NOTE: Often miscategorized as thriller — it is a dark comedy. The gold standard for half-hour comedy-drama.
+
+WHY THIS IS A BENCHMARK:
+- The fourth-wall breaks are not a gimmick — they ARE the series engine. Fleabag talks to us to avoid talking to the people in her life. The form mirrors the character's damage.
+- The pilot withholds the central tragedy (the death of her best friend, Boo) while making us feel its weight in every scene. That's exceptional craft — we feel the loss before we understand it.
+- Fleabag is the ultimate unreliable narrator: she presents herself as fine, knowingly wrecked, and in control. She is none of these things. The gap between her performance for us and the truth is where the comedy and pain live.
+- The pilot is 22 minutes. Every scene advances character, comedy, AND the hidden backstory simultaneously. There is no waste.
+- The dialogue is singular. Nobody else writes like this. That's a standard.
+- FOR CANADIAN APPLICATIONS: Fleabag is the model for any half-hour comedy-drama that wants to use a dark premise for genuine emotional resonance. The question is not "is this funny?" but "does the comedy come FROM the character's pain?"
+
+WHAT A SCRIPT MUST HAVE TO APPROACH THIS LEVEL:
+- A formal device (fourth-wall, voiceover) that is thematically justified — the device reveals more than it conceals
+- A protagonist performing for the audience in a way that reveals their damage more than it conceals it
+- Dialogue that earns the adjective "singular" — it could only come from this character, this writer
+
+SERIES ENGINE: "A woman deals with the fallout of a tragedy she hasn't admitted yet — by telling us everything except the thing that matters most."
+""",
+    },
+
+    {
+        "category": "comedy",
+        "content": """BENCHMARK: Catastrophe Pilot ("Episode 1", 2015 — Rob Delaney & Sharon Horgan)
+CATEGORY: Relationship Comedy-Drama (Half-Hour)
+SCORE EQUIVALENT: 44/50 (RECOMMEND — exceptional half-hour relationship comedy)
+
+WHY THIS IS A BENCHMARK:
+- Catastrophe is the anti-romantic-comedy: two flawed adults accidentally create a life together and then have to figure out if they actually like each other.
+- The engine is brutal honesty: Rob and Sharon say what they actually mean. The comedy comes not from misunderstanding but from the terrifying directness of two people who are too old for games.
+- The premise is deceptively simple (a one-week affair becomes a pregnancy becomes a relationship becomes a life) but generates infinite story because the real subject is the daily work of choosing to be with someone.
+- Both leads are star vehicles: Rob (American, funny, deeply insecure under the jokes) and Sharon (Irish, sharp, emotionally closed under the competence). Their chemistry is the show's engine.
+- The show is honest about sex, money, addiction, and the terror of commitment in ways that broadcast American TV cannot be. That specificity is what makes it feel true.
+
+WHAT A SCRIPT MUST HAVE TO APPROACH THIS LEVEL:
+- A relationship premise where both characters are equally flawed and equally interesting — no straight man, no comic relief
+- Dialogue that is brutally honest rather than romantically evasive
+- A comedic register that can hold genuine sadness without switching modes
+
+SERIES ENGINE: "Two people who met for a week accidentally become a family — and now they have to decide if they actually want to be."
+""",
+    },
+
+    # ─── WORKPLACE COMEDY ADDITIONS ───────────────────────────────────────────
+
+    {
+        "category": "comedy",
+        "content": """BENCHMARK: What We Do in the Shadows Pilot ("Pilot", 2019 — Jemaine Clement)
+CATEGORY: Mockumentary Comedy (Half-Hour)
+SCORE EQUIVALENT: 44/50 (RECOMMEND — exceptional mockumentary genre mashup)
+
+WHY THIS IS A BENCHMARK:
+- The premise is a perfect comedy engine: mockumentary format applied to vampire roommates in Staten Island. Mundane problems + supernatural absurdity = infinite story.
+- The formal bet of the show is that vampires subjected to the documentary format become banal. Their immortal power is constantly undermined by the mundane reality of having roommates, paying rent, and dealing with the city council.
+- The ensemble is designed for maximum comedic contrast: Nandor (proud warrior, deeply confused by modernity), Laszlo (aristocratic libertine), Nadja (seductive, volatile, surprisingly tender), Colin Robinson (energy vampire who feeds by boring people). Each archetype generates specific comedy.
+- The show uses the mockumentary format better than most human-comedy mockumentaries because the gap between what the vampires think of themselves (ancient, powerful, terrifying) and what they actually are (incompetent, confused, irrelevant) is larger and funnier.
+- FOR CANADIAN APPLICATIONS: The model for a genre-mashup comedy that can sustain multiple seasons through ensemble strength rather than premise novelty.
+
+WHAT A SCRIPT MUST HAVE TO APPROACH THIS LEVEL:
+- A genre mashup where the comedy comes from the collision of registers (high vs. low, ancient vs. modern, supernatural vs. mundane)
+- An ensemble whose archetypes are specific enough to generate comedy independently AND together
+- A formal device (the documentary crew) that earns its place and generates story, not just jokes
+
+SERIES ENGINE: "A documentary crew follows a group of vampire roommates in Staten Island trying to navigate the modern world — and failing, consistently and magnificently."
+""",
+    },
+
+    {
+        "category": "comedy",
+        "content": """BENCHMARK: Reservation Dogs Pilot ("F*ckin' Rez Dogs", 2021 — Sterlin Harjo & Taika Waititi)
+CATEGORY: Indigenous Half-Hour Comedy-Drama (FX/Hulu)
+SCORE EQUIVALENT: 45/50 (RECOMMEND — exceptional, essential for Canadian Indigenous content mandate)
+NOTE: Directly relevant to Canadian Indigenous content mandate. Only Indigenous-led writers, directors, and cast.
+
+WHY THIS IS A BENCHMARK:
+- Reservation Dogs is the proof that Indigenous voices telling Indigenous stories — with full creative control — produce world-class television. No white gaze, no anthropological framing, no "problem of the week" social issue structure.
+- The engine is specific and universal: four Indigenous teenagers on a reservation in Oklahoma want to leave for California. Their friend died before they could go together. They're still trying to leave. They might never leave. That's both a plot engine and a metaphysical condition.
+- The show is funny in a specific way: deadpan, matter-of-fact about hardship, deeply committed to the reality of this community. The humor comes from the community's specificity, not from exoticizing it.
+- The format is flexible: some episodes are pure comedy, some are devastating, some are formally experimental. The show earns this range because the characters are strong enough to hold any tone.
+- FOR CANADIAN BROADCASTERS: This is the benchmark for what Indigenous-led, Indigenous-focused content can be. If Philip is reading an Indigenous Canadian pilot, the question is: does it have the specificity and creative authority of Reservation Dogs? If not, what's missing?
+
+WHAT A SCRIPT MUST HAVE TO APPROACH THIS LEVEL:
+- Creative authority: the writer must come from inside the community, not observe it from outside
+- A community-specific voice that is not apologetic, not explanatory, not designed to educate non-Indigenous viewers
+- Characters whose desire to leave/stay is both personal and structural — it's not just their choice, it's their inheritance
+
+SERIES ENGINE: "Four Indigenous teenagers on a reservation in Oklahoma try to raise money to get to California — the dream their dead friend left them — and discover they might not be able to leave, or want to."
 """,
     },
 

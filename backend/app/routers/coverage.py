@@ -93,6 +93,11 @@ class DomainKnowledgeRequest(BaseModel):
     content: str
 
 
+class DomainKnowledgePatchRequest(BaseModel):
+    category: Optional[str] = None
+    content: Optional[str] = None
+
+
 class ExportRequest(BaseModel):
     email: Optional[str] = None
 
@@ -285,6 +290,28 @@ async def create_domain_knowledge(request: DomainKnowledgeRequest, db: AsyncSess
     await db.commit()
     await db.refresh(entry)
     return {"id": entry.id, "message": "Knowledge entry created"}
+
+
+@router.patch("/admin/knowledge/{entry_id}")
+async def update_domain_knowledge(entry_id: str, request: DomainKnowledgePatchRequest, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(DomainKnowledge).where(DomainKnowledge.id == entry_id))
+    entry = result.scalar_one_or_none()
+    if not entry:
+        raise HTTPException(status_code=404, detail="Knowledge entry not found")
+    if request.category is not None:
+        entry.category = request.category.strip().lower()
+    if request.content is not None:
+        entry.content = request.content.strip()
+    entry.updated_at = datetime.utcnow()
+    await db.commit()
+    await db.refresh(entry)
+    return {
+        "id": entry.id,
+        "category": entry.category,
+        "content": entry.content,
+        "created_at": entry.created_at,
+        "updated_at": entry.updated_at,
+    }
 
 
 @router.delete("/admin/knowledge/{entry_id}")

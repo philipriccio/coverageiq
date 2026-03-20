@@ -796,6 +796,232 @@ function HistoryPanel({ items, onSelect }: { items: HistoryItem[]; onSelect: (id
 
 // ─── Admin Page ────────────────────────────────────────────────────────────────
 
+const CATEGORY_OPTIONS = [
+  'general', 'drama', 'comedy', 'thriller', 'mystery',
+  'procedural', 'canadian', 'horror', 'sci-fi', 'period', 'calibration',
+]
+
+function extractTitle(content: string): string {
+  const firstLine = content.split('\n').find(l => l.trim()) || ''
+  return firstLine.replace(/^BENCHMARK:\s*/i, '').trim() || 'Untitled Entry'
+}
+
+function extractPreview(content: string): string {
+  return content.split('\n').filter(Boolean).slice(0, 3).join('\n')
+}
+
+function KnowledgeCard({
+  entry,
+  onDelete,
+  onSaved,
+}: {
+  entry: KnowledgeEntry
+  onDelete: (id: string) => void
+  onSaved: (updated: KnowledgeEntry) => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [editCategory, setEditCategory] = useState(entry.category)
+  const [editContent, setEditContent] = useState(entry.content)
+  const [saving, setSaving] = useState(false)
+
+  const handleSave = async () => {
+    setSaving(true)
+    try {
+      const res = await axios.patch(`${API_BASE}/api/coverage/admin/knowledge/${entry.id}`, {
+        category: editCategory,
+        content: editContent,
+      })
+      onSaved(res.data as KnowledgeEntry)
+      setEditing(false)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleCancel = () => {
+    setEditCategory(entry.category)
+    setEditContent(entry.content)
+    setEditing(false)
+  }
+
+  const title = extractTitle(entry.content)
+  const preview = extractPreview(entry.content)
+
+  if (editing) {
+    return (
+      <div style={{
+        background: '#1e293b',
+        border: '1px solid #334155',
+        borderRadius: '0.75rem',
+        padding: '1rem',
+        marginBottom: '0.75rem',
+      }}>
+        <div style={{ marginBottom: '0.75rem' }}>
+          <label style={{ color: '#94a3b8', fontSize: '0.75rem', fontWeight: 600, display: 'block', marginBottom: '0.25rem' }}>
+            CATEGORY
+          </label>
+          <select
+            value={editCategory}
+            onChange={e => setEditCategory(e.target.value)}
+            style={{
+              background: '#0f172a',
+              color: '#e2e8f0',
+              border: '1px solid #475569',
+              borderRadius: '0.5rem',
+              padding: '0.4rem 0.75rem',
+              fontSize: '0.875rem',
+              width: '100%',
+            }}
+          >
+            {CATEGORY_OPTIONS.map(c => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
+        </div>
+        <div style={{ marginBottom: '0.75rem' }}>
+          <label style={{ color: '#94a3b8', fontSize: '0.75rem', fontWeight: 600, display: 'block', marginBottom: '0.25rem' }}>
+            CONTENT
+          </label>
+          <textarea
+            value={editContent}
+            onChange={e => setEditContent(e.target.value)}
+            rows={12}
+            style={{
+              background: '#0f172a',
+              color: '#e2e8f0',
+              border: '1px solid #475569',
+              borderRadius: '0.5rem',
+              padding: '0.5rem 0.75rem',
+              fontSize: '0.8rem',
+              width: '100%',
+              fontFamily: 'monospace',
+              resize: 'vertical',
+              boxSizing: 'border-box',
+            }}
+          />
+        </div>
+        <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <button
+            type="button"
+            onClick={() => void handleSave()}
+            disabled={saving}
+            style={{
+              background: '#d97706',
+              color: '#fff',
+              border: 'none',
+              borderRadius: '0.5rem',
+              padding: '0.4rem 1rem',
+              fontWeight: 600,
+              fontSize: '0.85rem',
+              cursor: 'pointer',
+              opacity: saving ? 0.6 : 1,
+            }}
+          >
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+          <button
+            type="button"
+            onClick={handleCancel}
+            style={{
+              background: '#334155',
+              color: '#e2e8f0',
+              border: 'none',
+              borderRadius: '0.5rem',
+              padding: '0.4rem 1rem',
+              fontWeight: 600,
+              fontSize: '0.85rem',
+              cursor: 'pointer',
+            }}
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{
+      background: '#1e293b',
+      border: '1px solid #334155',
+      borderRadius: '0.75rem',
+      padding: '0.875rem 1rem',
+      marginBottom: '0.75rem',
+      display: 'flex',
+      gap: '1rem',
+      alignItems: 'flex-start',
+    }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
+          <span style={{
+            fontWeight: 700,
+            color: '#e2e8f0',
+            fontSize: '0.9rem',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}>{title}</span>
+          <span style={{
+            background: '#0f172a',
+            color: '#f59e0b',
+            border: '1px solid #f59e0b44',
+            borderRadius: '99px',
+            padding: '0.1rem 0.6rem',
+            fontSize: '0.7rem',
+            fontWeight: 700,
+            flexShrink: 0,
+            textTransform: 'uppercase',
+            letterSpacing: '0.05em',
+          }}>{entry.category}</span>
+        </div>
+        <pre style={{
+          color: '#64748b',
+          fontSize: '0.75rem',
+          margin: 0,
+          whiteSpace: 'pre-wrap',
+          wordBreak: 'break-word',
+          fontFamily: 'inherit',
+          lineHeight: 1.5,
+        }}>{preview}</pre>
+      </div>
+      <div style={{ display: 'flex', gap: '0.4rem', flexShrink: 0 }}>
+        <button
+          type="button"
+          onClick={() => setEditing(true)}
+          style={{
+            background: '#334155',
+            color: '#e2e8f0',
+            border: 'none',
+            borderRadius: '0.4rem',
+            padding: '0.3rem 0.75rem',
+            fontSize: '0.8rem',
+            fontWeight: 600,
+            cursor: 'pointer',
+          }}
+        >
+          Edit
+        </button>
+        <button
+          type="button"
+          onClick={() => onDelete(entry.id)}
+          style={{
+            background: '#7f1d1d',
+            color: '#fca5a5',
+            border: 'none',
+            borderRadius: '0.4rem',
+            padding: '0.3rem 0.75rem',
+            fontSize: '0.8rem',
+            fontWeight: 600,
+            cursor: 'pointer',
+          }}
+        >
+          Delete
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function AdminPage() {
   const [entries, setEntries] = useState<KnowledgeEntry[]>([])
   const [category, setCategory] = useState('general')
@@ -835,74 +1061,153 @@ function AdminPage() {
   }
 
   const handleDelete = async (id: string) => {
+    if (!confirm('Delete this entry?')) return
     await axios.delete(`${API_BASE}/api/coverage/admin/knowledge/${id}`)
     await loadEntries()
   }
 
+  const handleSaved = (updated: KnowledgeEntry) => {
+    setEntries(prev => prev.map(e => e.id === updated.id ? updated : e))
+  }
+
+  // Sort categories: known ones first, then alphabetical
+  const categoryOrder = [...CATEGORY_OPTIONS, 'calibration']
+  const sortedGroups = Object.entries(grouped).sort(([a], [b]) => {
+    const ai = categoryOrder.indexOf(a)
+    const bi = categoryOrder.indexOf(b)
+    if (ai === -1 && bi === -1) return a.localeCompare(b)
+    if (ai === -1) return 1
+    if (bi === -1) return -1
+    return ai - bi
+  })
+
   return (
-    <div className="container">
-      <header>
-        <h1>
-          <span className="logo-icon">🧠</span>CoverageIQ Admin
-        </h1>
-        <p>Domain knowledge store for better script coverage.</p>
-      </header>
-      <main>
-        <form onSubmit={handleCreate}>
-          <div className="form-row">
-            <div className="form-group">
-              <label htmlFor="category">Category</label>
-              <input
-                id="category"
+    <div style={{ minHeight: '100vh', background: '#0f172a', color: '#e2e8f0', padding: '2rem' }}>
+      <div style={{ maxWidth: '900px', margin: '0 auto' }}>
+        <div style={{ marginBottom: '2rem' }}>
+          <h1 style={{ fontSize: '1.75rem', fontWeight: 800, color: '#f59e0b', margin: 0 }}>
+            🧠 Benchmark Manager
+          </h1>
+          <p style={{ color: '#64748b', margin: '0.25rem 0 0', fontSize: '0.9rem' }}>
+            Manage domain knowledge entries — edit categories, content, and move benchmarks between groups.
+          </p>
+        </div>
+
+        {/* New Entry Form */}
+        <div style={{
+          background: '#1e293b',
+          border: '1px solid #334155',
+          borderRadius: '0.75rem',
+          padding: '1.25rem',
+          marginBottom: '2rem',
+        }}>
+          <h2 style={{ fontSize: '1rem', fontWeight: 700, color: '#94a3b8', margin: '0 0 1rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            New Entry
+          </h2>
+          <form onSubmit={(e) => void handleCreate(e)}>
+            <div style={{ marginBottom: '0.75rem' }}>
+              <label style={{ color: '#94a3b8', fontSize: '0.75rem', fontWeight: 600, display: 'block', marginBottom: '0.25rem' }}>
+                CATEGORY
+              </label>
+              <select
                 value={category}
-                onChange={(e) => setCategory(e.target.value)}
-                placeholder="general, drama, comedy..."
+                onChange={e => setCategory(e.target.value)}
+                style={{
+                  background: '#0f172a',
+                  color: '#e2e8f0',
+                  border: '1px solid #475569',
+                  borderRadius: '0.5rem',
+                  padding: '0.4rem 0.75rem',
+                  fontSize: '0.875rem',
+                  width: '100%',
+                }}
+              >
+                {CATEGORY_OPTIONS.map(c => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            </div>
+            <div style={{ marginBottom: '0.75rem' }}>
+              <label style={{ color: '#94a3b8', fontSize: '0.75rem', fontWeight: 600, display: 'block', marginBottom: '0.25rem' }}>
+                CONTENT
+              </label>
+              <textarea
+                rows={6}
+                value={content}
+                onChange={e => setContent(e.target.value)}
+                placeholder="Add coverage heuristics, genre patterns, buyer language, or benchmark notes..."
+                style={{
+                  background: '#0f172a',
+                  color: '#e2e8f0',
+                  border: '1px solid #475569',
+                  borderRadius: '0.5rem',
+                  padding: '0.5rem 0.75rem',
+                  fontSize: '0.875rem',
+                  width: '100%',
+                  fontFamily: 'monospace',
+                  resize: 'vertical',
+                  boxSizing: 'border-box',
+                }}
               />
             </div>
-          </div>
-          <div className="form-group full-width">
-            <label htmlFor="content">Knowledge Entry</label>
-            <textarea
-              id="content"
-              rows={8}
-              value={content}
-              onChange={(e) => setContent(e.target.value)}
-              placeholder="Add coverage heuristics, genre patterns, buyer language, or notes from great reports..."
-            />
-          </div>
-          <button type="submit" disabled={!category.trim() || !content.trim()}>
-            Add Knowledge Entry
-          </button>
-        </form>
+            {error && (
+              <div style={{ color: '#f87171', fontSize: '0.85rem', marginBottom: '0.75rem' }}>{error}</div>
+            )}
+            <button
+              type="submit"
+              disabled={!category.trim() || !content.trim()}
+              style={{
+                background: '#d97706',
+                color: '#fff',
+                border: 'none',
+                borderRadius: '0.5rem',
+                padding: '0.5rem 1.5rem',
+                fontWeight: 700,
+                fontSize: '0.875rem',
+                cursor: 'pointer',
+                opacity: (!category.trim() || !content.trim()) ? 0.5 : 1,
+              }}
+            >
+              Add Entry
+            </button>
+          </form>
+        </div>
 
-        {error && <div className="error">{error}</div>}
-
-        <div className="admin-groups">
-          {Object.keys(grouped).length === 0 ? (
-            <div className="empty-state">No domain knowledge yet.</div>
+        {/* Grouped entries */}
+        <div>
+          {sortedGroups.length === 0 ? (
+            <div style={{ color: '#64748b', textAlign: 'center', padding: '2rem' }}>No domain knowledge yet.</div>
           ) : (
-            Object.entries(grouped).map(([group, items]) => (
-              <div className="admin-group" key={group}>
-                <h3>{group}</h3>
-                <div className="knowledge-list">
-                  {items.map((entry) => (
-                    <div className="knowledge-card" key={entry.id}>
-                      <p>{entry.content}</p>
-                      <button
-                        type="button"
-                        className="danger-btn"
-                        onClick={() => void handleDelete(entry.id)}
-                      >
-                        Delete
-                      </button>
-                    </div>
+            sortedGroups.map(([group, items]) => (
+              <div key={group} style={{ marginBottom: '2rem' }}>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.75rem',
+                  marginBottom: '0.75rem',
+                  paddingBottom: '0.5rem',
+                  borderBottom: '1px solid #1e293b',
+                }}>
+                  <h3 style={{ margin: 0, color: '#f59e0b', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', fontSize: '0.9rem' }}>
+                    {group}
+                  </h3>
+                  <span style={{ color: '#64748b', fontSize: '0.8rem' }}>{items.length} {items.length === 1 ? 'entry' : 'entries'}</span>
+                </div>
+                <div>
+                  {items.map(entry => (
+                    <KnowledgeCard
+                      key={entry.id}
+                      entry={entry}
+                      onDelete={(id) => void handleDelete(id)}
+                      onSaved={handleSaved}
+                    />
                   ))}
                 </div>
               </div>
             ))
           )}
         </div>
-      </main>
+      </div>
     </div>
   )
 }
